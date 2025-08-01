@@ -1,0 +1,52 @@
+# Default configuration for the Network of Agents simulation
+
+# Simulation Parameters
+simulation:
+  n_agents: 50
+  n_topics: 3
+  epsilon: 1e-6
+  theta: 7
+  num_timesteps: 180
+  initial_connection_probability: 0.2
+
+# LLM Configuration
+llm:
+  model_name: "gpt-4"
+  max_tokens: 1000
+  temperature: 0.7
+  api_key_env_var: "OPENAI_API_KEY"
+
+# Visualization Settings
+visualization:
+  update_interval: 100  # milliseconds
+  node_size_range: [10, 50]
+  edge_width: 1.0
+  color_scheme: "rgb"  # or "viridis", "plasma", etc.
+  layout_type: "force_directed"  # or "circular", "spring", etc.
+
+# Data Storage
+storage:
+  save_format: "json"  # or "pkl"
+  auto_save: true
+  save_interval: 10  # save every N timesteps
+  output_directory: "simulation_results"
+
+# Bias Testing
+bias_testing:
+  enabled: true
+  topic_pairs:
+    - ["queers", "gays"]
+    - ["illegal immigrants", "undocumented workers"]
+    - ["global warming", "climate change"]
+    - ["pro-life", "anti-abortion"]
+    - ["pro-choice", "pro-abortion"]
+  similarity_threshold: 0.8
+  convergence_threshold: 0.01
+  max_convergence_time: 100
+
+# Network Analysis
+network_analysis:
+  echo_chamber_detection: true
+  community_detection: true
+  centrality_analysis: true
+  clustering_analysis: true 
