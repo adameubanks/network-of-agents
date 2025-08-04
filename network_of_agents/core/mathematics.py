@@ -11,7 +11,7 @@ from typing import Tuple
 
 def row_normalize(M: np.ndarray, epsilon: float) -> np.ndarray:
     """
-    Row-normalization operator R(M) := diag(M1 + ε1)⁻¹M
+    Row-normalize a matrix: R(M) = (1 / (M1 + ε)) * M
     
     Args:
         M: Input matrix
@@ -76,21 +76,24 @@ def calculate_W(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
     Calculate weighting matrix W(X[k], A[k]) := SN(X[k]) ◦ A[k] + (I - diag([SN(X[k]) ◦ A[k]]1))
     
     Args:
-        X_k: Opinion matrix at time k
+        X_k: Opinion matrix at time k (single topic)
         A_k: Adjacency matrix at time k
         epsilon: Small positive parameter
         
     Returns:
         Weighting matrix W
     """
-    SN_Xk = calculate_SN(X_k, epsilon)
+    # Reshape X_k to 2D matrix for compatibility with existing functions
+    X_k_2d = X_k.reshape(-1, 1)
+    
+    SN_Xk = calculate_SN(X_k_2d, epsilon)
     W_temp = SN_Xk * A_k  # Hadamard product
     
     # Calculate row sums of W_temp
     row_sums_W_temp = W_temp.sum(axis=1)
     
     # Create diagonal matrix for correction
-    identity_matrix = np.eye(X_k.shape[0])
+    identity_matrix = np.eye(X_k_2d.shape[0])
     diag_correction = np.diag(row_sums_W_temp)
     
     W_Xk_Ak = W_temp + (identity_matrix - diag_correction)
@@ -102,15 +105,19 @@ def update_opinions(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndar
     Update opinions: X[k+1] = W(X[k], A[k])X[k]
     
     Args:
-        X_k: Opinion matrix at time k
+        X_k: Opinion vector at time k (single topic)
         A_k: Adjacency matrix at time k
         epsilon: Small positive parameter
         
     Returns:
-        Updated opinion matrix X[k+1]
+        Updated opinion vector X[k+1]
     """
     W_k = calculate_W(X_k, A_k, epsilon)
     X_next = np.dot(W_k, X_k)
+    
+    # Ensure opinions stay within [0, 1] bounds
+    X_next = np.clip(X_next, 0.0, 1.0)
+    
     return X_next
 
 
@@ -119,14 +126,17 @@ def calculate_S_hat(X_k: np.ndarray, theta: int, epsilon: float) -> np.ndarray:
     Calculate probabilistic similarity matrix Ŝ[k] := R(SN(X[k]) ◦ θ)
     
     Args:
-        X_k: Opinion matrix at time k
+        X_k: Opinion vector at time k (single topic)
         theta: Positive integer parameter for edge formation
         epsilon: Small positive parameter
         
     Returns:
         Probabilistic similarity matrix Ŝ[k]
     """
-    SN_Xk = calculate_SN(X_k, epsilon)
+    # Reshape X_k to 2D matrix for compatibility
+    X_k_2d = X_k.reshape(-1, 1)
+    
+    SN_Xk = calculate_SN(X_k_2d, epsilon)
     S_hat_k = row_normalize(np.power(SN_Xk, theta), epsilon)
     return S_hat_k
 
@@ -137,7 +147,7 @@ def update_edges(A_k: np.ndarray, X_k: np.ndarray, theta: int, epsilon: float) -
     
     Args:
         A_k: Adjacency matrix at time k
-        X_k: Opinion matrix at time k
+        X_k: Opinion vector at time k (single topic)
         theta: Positive integer parameter for edge formation
         epsilon: Small positive parameter
         
@@ -164,7 +174,7 @@ def validate_matrices(X: np.ndarray, A: np.ndarray) -> bool:
     Validate that matrices meet the required properties
     
     Args:
-        X: Opinion matrix
+        X: Opinion vector (single topic)
         A: Adjacency matrix
         
     Returns:
@@ -179,10 +189,10 @@ def validate_matrices(X: np.ndarray, A: np.ndarray) -> bool:
         return False
     
     # Check adjacency matrix properties
-    if not np.allclose(A, A.T):  # Symmetric
+    if not np.allclose(A, A.T):  # Check symmetry
         return False
     
-    if not np.allclose(np.diag(A), 0):  # Hollow
+    if np.any(np.diag(A) != 0):  # Check hollow property
         return False
     
     return True 

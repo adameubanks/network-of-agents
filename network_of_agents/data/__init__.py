@@ -1,8 +1,8 @@
 """
-Data management and storage for the simulation.
+Data management module for the network of agents simulation.
 """
 
-from .storage import SimulationDataStorage
+from .storage import DataStorage
 from .analysis import SimulationAnalyzer
 
-__all__ = ["SimulationDataStorage", "SimulationAnalyzer"] 
+__all__ = ['DataStorage', 'SimulationAnalyzer'] 

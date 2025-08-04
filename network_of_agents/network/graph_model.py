@@ -13,16 +13,23 @@ class NetworkModel:
     Manages the social network graph structure and provides analysis methods.
     """
     
-    def __init__(self, n_agents: int, initial_connection_probability: float = 0.2):
+    def __init__(self, n_agents: int, initial_connection_probability: float = 0.2, random_seed: Optional[int] = None):
         """
         Initialize the network model.
         
         Args:
             n_agents: Number of agents in the network
             initial_connection_probability: Probability of initial connections
+            random_seed: Random seed for reproducible results
         """
         self.n_agents = n_agents
         self.initial_connection_probability = initial_connection_probability
+        self.random_seed = random_seed
+        
+        # Set random seed if provided
+        if random_seed is not None:
+            np.random.seed(random_seed)
+            
         self.adjacency_matrix = self._initialize_adjacency_matrix()
         self.agents: List[LLMAgent] = []
         self.network_history = []
@@ -188,12 +195,9 @@ class NetworkModel:
             metrics['average_degree'].append(avg_degree)
             
             # Calculate clustering coefficient
-            try:
-                G = nx.from_numpy_array(adj_matrix)
-                clustering = nx.average_clustering(G)
-                metrics['clustering_coefficient'].append(clustering)
-            except:
-                metrics['clustering_coefficient'].append(0.0)
+            G = nx.from_numpy_array(adj_matrix)
+            clustering = nx.average_clustering(G)
+            metrics['clustering_coefficient'].append(clustering)
             
             # Calculate number of components
             G = nx.from_numpy_array(adj_matrix)
@@ -214,7 +218,6 @@ class NetworkModel:
         # Add agent attributes
         for i, agent in enumerate(self.agents):
             G.nodes[i]['agent_id'] = agent.agent_id
-            G.nodes[i]['persona'] = agent.persona
             G.nodes[i]['opinions'] = agent.get_opinions().tolist()
             G.nodes[i]['degree'] = agent.get_degree(self.adjacency_matrix)
         

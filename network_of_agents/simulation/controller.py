@@ -1,135 +1,140 @@
 """
-Simulation controller for managing the main simulation loop and data collection.
+Simplified simulation controller for the network of agents.
 """
 
 import numpy as np
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional
 from tqdm import tqdm
 import time
 
-from ..core.mathematics import update_opinions, update_edges
-from ..network.graph_model import NetworkModel
 from ..llm.agent import LLMAgent
 from ..llm.litellm_client import LiteLLMClient
-from ..data.storage import SimulationDataStorage
+from ..network.graph_model import NetworkModel
+from ..data.storage import DataStorage
+from ..core.mathematics import update_opinions, update_edges
 
 
 class SimulationController:
     """
-    Main controller for the social network simulation.
+    Simplified controller for the network of agents simulation.
     """
     
     def __init__(self, 
-                 n_agents: int = 50,
-                 n_topics: int = 3,
-                 epsilon: float = 1e-6,
+                 n_agents: int = 10,
+                 epsilon: float = 0.001,
                  theta: int = 7,
-                 num_timesteps: int = 180,
+                 num_timesteps: int = 50,
                  initial_connection_probability: float = 0.2,
                  llm_client: Optional[LiteLLMClient] = None,
                  topics: Optional[List[str]] = None,
-                 agent_personas: Optional[List[str]] = None):
+                 initial_opinions: Optional[List[float]] = None,
+                 random_seed: Optional[int] = None,
+                 initial_opinion_diversity: Optional[float] = None):
         """
-        Initialize the simulation controller.
+        Initialize simulation controller.
         
         Args:
             n_agents: Number of agents in the network
-            n_topics: Number of topics for opinions
-            epsilon: Small positive parameter for mathematical operations
-            theta: Parameter for edge formation
-            num_timesteps: Total number of simulation steps
-            initial_connection_probability: Probability of initial connections
-            llm_client: LiteLLM client for opinion generation
+            epsilon: Small positive parameter for numerical stability
+            theta: Positive integer parameter for edge formation
+            num_timesteps: Number of simulation timesteps
+            initial_connection_probability: Initial probability of connections
+            llm_client: LLM client for opinion generation
             topics: List of topics for opinions
-            agent_personas: List of agent personas
+            initial_opinions: Initial opinion values for agents
+            random_seed: Random seed for reproducible results
+            initial_opinion_diversity: Factor controlling initial opinion diversity (0-1)
         """
+        # Set random seed if provided
+        if random_seed is not None:
+            np.random.seed(random_seed)
+        
         self.n_agents = n_agents
-        self.n_topics = n_topics
         self.epsilon = epsilon
         self.theta = theta
         self.num_timesteps = num_timesteps
         self.initial_connection_probability = initial_connection_probability
-        
-        # Initialize components
         self.llm_client = llm_client
         self.topics = topics or self._generate_default_topics()
-        self.agent_personas = agent_personas or self._generate_default_personas()
+        self.initial_opinions = initial_opinions
+        self.random_seed = random_seed
+        self.initial_opinion_diversity = initial_opinion_diversity
         
-        # Initialize network and agents
-        self.network = NetworkModel(n_agents, initial_connection_probability)
+        # Initialize components
+        self.network = NetworkModel(n_agents, initial_connection_probability, random_seed)
+        self.data_storage = DataStorage()
         self.agents = self._initialize_agents()
-        self.network.add_agents(self.agents)
-        
-        # Initialize data storage
-        self.data_storage = SimulationDataStorage()
         
         # Simulation state
-        self.current_timestep = 0
         self.is_running = False
-        self.callbacks = []
+        self.current_timestep = 0
     
     def _generate_default_topics(self) -> List[str]:
         """Generate default topics for the simulation."""
-        return ["Topic 1", "Topic 2", "Topic 3"]
+        return ["Topic 1"]
     
-    def _generate_default_personas(self) -> List[str]:
-        """Generate default agent personas."""
-        personas = [
-            "A conservative individual who values tradition and stability",
-            "A liberal individual who values progress and change",
-            "A moderate individual who seeks balance and compromise",
-            "A libertarian individual who values individual freedom",
-            "A progressive individual who advocates for social justice",
-            "A traditionalist individual who respects established norms",
-            "An activist individual who fights for causes they believe in",
-            "A pragmatist individual who focuses on practical solutions",
-            "An idealist individual who believes in perfect solutions",
-            "A realist individual who accepts the world as it is"
-        ]
+    def _generate_diverse_initial_opinions(self, n_agents: int, diversity_factor: float = 0.8) -> List[float]:
+        """
+        Generate diverse initial opinions for agents.
         
-        # Repeat personas if needed
-        while len(personas) < self.n_agents:
-            personas.extend(personas[:self.n_agents - len(personas)])
+        Args:
+            n_agents: Number of agents
+            diversity_factor: Factor controlling opinion diversity (0-1)
+            
+        Returns:
+            List of initial opinion values for each agent
+        """
+        opinions = []
         
-        return personas[:self.n_agents]
+        # Create opinion clusters to ensure diversity
+        n_clusters = max(2, int(n_agents * 0.3))  # At least 2 clusters
+        
+        for i in range(n_agents):
+            # Assign agents to clusters
+            cluster_id = i % n_clusters
+            
+            # Generate opinion within cluster
+            base_opinion = cluster_id / (n_clusters - 1)  # Spread clusters across [0, 1]
+            noise = (np.random.random() - 0.5) * diversity_factor
+            opinion = np.clip(base_opinion + noise, 0.0, 1.0)
+            
+            opinions.append(opinion)
+        
+        return opinions
     
     def _initialize_agents(self) -> List[LLMAgent]:
-        """Initialize LLM agents with personas and opinions."""
+        """
+        Initialize all agents.
+        
+        Returns:
+            List of initialized agents
+        """
         agents = []
         
+        # Generate initial opinions if not provided
+        if self.initial_opinions is None:
+            if self.initial_opinion_diversity is not None:
+                self.initial_opinions = self._generate_diverse_initial_opinions(
+                    self.n_agents, self.initial_opinion_diversity
+                )
+            else:
+                self.initial_opinions = np.random.random(self.n_agents).tolist()
+        
+        # Create agents
         for i in range(self.n_agents):
-            persona = self.agent_personas[i]
             agent = LLMAgent(
                 agent_id=i,
-                persona=persona,
+                initial_opinions=[self.initial_opinions[i]],
                 topics=self.topics,
                 llm_client=self.llm_client
             )
-            
-            # Initialize opinions using LLM if available, otherwise use random
-            if self.llm_client:
-                agent.initialize_opinions(self.topics, self.llm_client)
-            else:
-                # Fallback to random opinions
-                random_opinions = np.random.rand(self.n_topics)
-                agent.opinions = random_opinions
-            
             agents.append(agent)
         
         return agents
     
-    def add_callback(self, callback: Callable[[int, Dict[str, Any]], None]):
-        """
-        Add a callback function to be called at each timestep.
-        
-        Args:
-            callback: Function to call with (timestep, data) arguments
-        """
-        self.callbacks.append(callback)
-    
     def run_simulation(self, progress_bar: bool = True) -> Dict[str, Any]:
         """
-        Run the complete simulation.
+        Run the simplified simulation with LLM encoding/decoding.
         
         Args:
             progress_bar: Whether to show progress bar
@@ -141,7 +146,7 @@ class SimulationController:
         self.current_timestep = 0
         
         # Initialize data storage
-        self.data_storage.initialize(self.n_agents, self.n_topics, self.num_timesteps)
+        self.data_storage.initialize(self.n_agents, self.num_timesteps)
         
         # Store initial state
         self._store_current_state()
@@ -152,168 +157,111 @@ class SimulationController:
         for timestep in iterator:
             self.current_timestep = timestep
             
-            # Update opinions
-            X_current = self._get_opinion_matrix()
+            # Step 1: Update opinions using mathematical framework
             A_current = self.network.get_adjacency_matrix()
-            
+            X_current = self._get_opinion_matrix()
             X_next = update_opinions(X_current, A_current, self.epsilon)
+            
+            # Step 2: Apply LLM encoding/decoding if available
+            if self.llm_client is not None:
+                X_next = self._apply_llm_encoding_decoding(X_next)
+            
             self._update_agent_opinions(X_next)
             
-            # Update network topology
+            # Step 3: Update network topology based on opinion similarity
             A_next = update_edges(A_current, X_next, self.theta, self.epsilon)
             self.network.update_adjacency_matrix(A_next)
             
-            # Store current state
+            # Step 4: Store current state
             self._store_current_state()
-            
-            # Call callbacks
-            self._call_callbacks(timestep)
         
         self.is_running = False
+        
         return self.data_storage.get_simulation_results()
     
     def _get_opinion_matrix(self) -> np.ndarray:
-        """Get the current opinion matrix from all agents."""
-        opinion_matrix = np.zeros((self.n_agents, self.n_topics))
+        """
+        Get current opinion matrix.
         
-        for i, agent in enumerate(self.agents):
-            opinion_matrix[i, :] = agent.get_opinions()
-        
-        return opinion_matrix
+        Returns:
+            Current opinion vector
+        """
+        opinions = []
+        for agent in self.agents:
+            opinions.append(agent.get_opinions()[0])  # Single topic
+        return np.array(opinions)
     
     def _update_agent_opinions(self, new_opinions: np.ndarray):
-        """Update opinions for all agents."""
+        """
+        Update all agent opinions.
+        
+        Args:
+            new_opinions: New opinion vector
+        """
         for i, agent in enumerate(self.agents):
-            agent.update_opinions(new_opinions[i, :])
+            agent.update_opinions(np.array([new_opinions[i]]))
     
     def _store_current_state(self):
-        """Store the current simulation state."""
-        # Store opinion matrix
-        opinion_matrix = self._get_opinion_matrix()
-        self.data_storage.store_opinions(self.current_timestep, opinion_matrix)
-        
-        # Store adjacency matrix
-        adjacency_matrix = self.network.get_adjacency_matrix()
-        self.data_storage.store_adjacency(self.current_timestep, adjacency_matrix)
-        
-        # Store network metrics
-        metrics = {
-            'density': self.network.get_network_density(),
-            'average_degree': self.network.get_average_degree(),
-            'clustering_coefficient': self.network.get_clustering_coefficient(),
-            'num_components': len(self.network.get_connected_components()),
-            'echo_chambers': len(self.network.get_echo_chambers())
-        }
-        self.data_storage.store_metrics(self.current_timestep, metrics)
-        
-        # Store agent-specific data
-        agent_data = []
-        for agent in self.agents:
-            agent_data.append({
-                'agent_id': agent.agent_id,
-                'persona': agent.persona,
-                'opinions': agent.get_opinions().tolist(),
-                'degree': agent.get_degree(adjacency_matrix)
-            })
-        self.data_storage.store_agent_data(self.current_timestep, agent_data)
-    
-    def _call_callbacks(self, timestep: int):
-        """Call all registered callbacks."""
-        data = {
-            'timestep': timestep,
-            'opinions': self._get_opinion_matrix(),
-            'adjacency': self.network.get_adjacency_matrix(),
-            'metrics': {
-                'density': self.network.get_network_density(),
-                'average_degree': self.network.get_average_degree(),
-                'clustering_coefficient': self.network.get_clustering_coefficient(),
-                'num_components': len(self.network.get_connected_components()),
-                'echo_chambers': len(self.network.get_echo_chambers())
-            }
-        }
-        
-        for callback in self.callbacks:
-            try:
-                callback(timestep, data)
-            except Exception as e:
-                print(f"Error in callback: {e}")
+        """Store current simulation state."""
+        opinions = self._get_opinion_matrix()
+        adjacency = self.network.get_adjacency_matrix()
+        self.data_storage.store_timestep(self.current_timestep, opinions, adjacency)
     
     def get_current_state(self) -> Dict[str, Any]:
         """
-        Get the current simulation state.
+        Get current simulation state.
         
         Returns:
             Dictionary containing current state
         """
         return {
             'timestep': self.current_timestep,
-            'is_running': self.is_running,
-            'opinions': self._get_opinion_matrix(),
-            'adjacency': self.network.get_adjacency_matrix(),
-            'network_metrics': {
-                'density': self.network.get_network_density(),
-                'average_degree': self.network.get_average_degree(),
-                'clustering_coefficient': self.network.get_clustering_coefficient(),
-                'num_components': len(self.network.get_connected_components()),
-                'echo_chambers': len(self.network.get_echo_chambers())
-            },
-            'agents': [agent.to_dict() for agent in self.agents]
-        }
-    
-    def save_simulation(self, filename: str):
+            'opinions': self._get_opinion_matrix().tolist(),
+            'adjacency': self.network.get_adjacency_matrix().tolist(),
+            'is_running': self.is_running
+        } 
+
+    def _apply_llm_encoding_decoding(self, opinions: np.ndarray) -> np.ndarray:
         """
-        Save the simulation state to a file.
+        Apply LLM encoding and decoding to opinions.
         
         Args:
-            filename: Name of the file to save to
+            opinions: Current opinion vector
+            
+        Returns:
+            Updated opinion vector after LLM processing
         """
-        simulation_data = {
-            'parameters': {
-                'n_agents': self.n_agents,
-                'n_topics': self.n_topics,
-                'epsilon': self.epsilon,
-                'theta': self.theta,
-                'num_timesteps': self.num_timesteps,
-                'initial_connection_probability': self.initial_connection_probability,
-                'topics': self.topics
-            },
-            'current_state': self.get_current_state(),
-            'simulation_data': self.data_storage.get_simulation_results()
-        }
+        if self.llm_client is None:
+            return opinions
         
-        self.data_storage.save_to_file(filename, simulation_data)
-    
-    def load_simulation(self, filename: str):
-        """
-        Load a simulation state from a file.
-        
-        Args:
-            filename: Name of the file to load from
-        """
-        simulation_data = self.data_storage.load_from_file(filename)
-        
-        # Update parameters
-        params = simulation_data['parameters']
-        self.n_agents = params['n_agents']
-        self.n_topics = params['n_topics']
-        self.epsilon = params['epsilon']
-        self.theta = params['theta']
-        self.num_timesteps = params['num_timesteps']
-        self.initial_connection_probability = params['initial_connection_probability']
-        self.topics = params['topics']
-        
-        # Update current state
-        current_state = simulation_data['current_state']
-        self.current_timestep = current_state['timestep']
-        self.is_running = current_state['is_running']
-        
-        # Reconstruct agents
-        self.agents = [LLMAgent.from_dict(agent_data) for agent_data in current_state['agents']]
-        
-        # Reconstruct network
-        self.network = NetworkModel(self.n_agents, self.initial_connection_probability)
-        self.network.add_agents(self.agents)
-        self.network.adjacency_matrix = np.array(current_state['adjacency'])
-        
-        # Load simulation data
-        self.data_storage.load_simulation_data(simulation_data['simulation_data']) 
+        try:
+            # Encode opinions to text
+            encoded_texts = []
+            for i, opinion in enumerate(opinions):
+                if opinion > 0.7:
+                    stance = "strongly support"
+                elif opinion > 0.5:
+                    stance = "support"
+                elif opinion > 0.3:
+                    stance = "somewhat oppose"
+                else:
+                    stance = "strongly oppose"
+                
+                text = f"Agent {i} {stance} {self.topics[0]} (opinion: {opinion:.2f})"
+                encoded_texts.append(text)
+            
+            # Decode back to opinions using LLM
+            decoded_opinions = []
+            for i, text in enumerate(encoded_texts):
+                try:
+                    opinion = self.llm_client.interpret_text_to_opinions(text, self.topics)[0]
+                    decoded_opinions.append(opinion)
+                except Exception as e:
+                    # If LLM fails, keep original opinion
+                    decoded_opinions.append(opinions[i])
+            
+            return np.array(decoded_opinions)
+            
+        except Exception as e:
+            # If any error occurs, return original opinions
+            return opinions 

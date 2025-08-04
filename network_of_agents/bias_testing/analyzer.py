@@ -1,36 +1,33 @@
 """
-Bias analyzer for detecting and analyzing bias patterns in simulation results.
+Bias testing analyzer for detecting and analyzing biases in simulation results.
 """
 
 import numpy as np
-from typing import Dict, List, Any, Tuple
-import matplotlib.pyplot as plt
-import seaborn as sns
+from typing import Dict, List, Any
 
 
 class BiasAnalyzer:
     """
-    Analyzes bias patterns in simulation results.
+    Analyzes simulation results for bias detection and analysis.
     """
     
     def __init__(self):
-        """Initialize the bias analyzer."""
         pass
     
     def analyze_convergence_patterns(self, opinion_history: List[np.ndarray]) -> Dict[str, float]:
         """
-        Analyze convergence patterns in opinion evolution.
+        Analyze opinion convergence patterns.
         
         Args:
-            opinion_history: List of opinion matrices over time
+            opinion_history: List of opinion vectors over time
             
         Returns:
-            Dictionary containing convergence analysis metrics
+            Dictionary containing convergence analysis
         """
         if not opinion_history or len(opinion_history) < 2:
             return {}
         
-        # Calculate opinion variance over time
+        # Calculate variance over time
         variances = []
         for opinions in opinion_history:
             if opinions is not None:
@@ -43,131 +40,240 @@ class BiasAnalyzer:
         initial_variance = variances[0]
         final_variance = variances[-1]
         
-        # Convergence speed (rate of variance reduction)
+        # Convergence speed
         if initial_variance > 0:
             convergence_speed = (initial_variance - final_variance) / initial_variance
         else:
             convergence_speed = 0
         
-        # Convergence stability (how stable the final state is)
-        if len(variances) > 10:
-            final_stability = np.std(variances[-10:])  # Standard deviation of last 10 timesteps
-        else:
-            final_stability = np.std(variances)
-        
-        # Convergence time (when variance drops below threshold)
-        threshold = initial_variance * 0.1  # 10% of initial variance
+        # Convergence time (when variance drops below 10% of initial)
+        threshold = initial_variance * 0.1
         convergence_time = len(variances)
         for i, variance in enumerate(variances):
             if variance <= threshold:
                 convergence_time = i
                 break
         
+        # Stability analysis
+        if len(variances) > 10:
+            final_stability = np.std(variances[-10:])
+        else:
+            final_stability = np.std(variances)
+        
         return {
             'convergence_speed': convergence_speed,
-            'convergence_stability': final_stability,
             'convergence_time': convergence_time,
+            'final_stability': final_stability,
             'initial_variance': initial_variance,
             'final_variance': final_variance,
-            'variance_reduction': initial_variance - final_variance
+            'variance_history': variances
+        }
+    
+    def analyze_llm_consistency(self, loss_metrics_history: List[Dict[int, Dict[str, Any]]]) -> Dict[str, Any]:
+        """
+        Analyze LLM round-trip consistency over time.
+        
+        Args:
+            loss_metrics_history: History of loss metrics from data storage
+            
+        Returns:
+            Dictionary containing LLM consistency analysis
+        """
+        if not loss_metrics_history or len(loss_metrics_history) < 2:
+            return {}
+        
+        # Extract loss trends over time
+        avg_losses = []
+        max_losses = []
+        min_losses = []
+        
+        for timestep_losses in loss_metrics_history:
+            if timestep_losses is not None:
+                timestep_avg_losses = [data['average_loss'] for data in timestep_losses.values()]
+                timestep_max_losses = [data['max_loss'] for data in timestep_losses.values()]
+                timestep_min_losses = [data['min_loss'] for data in timestep_losses.values()]
+                
+                avg_losses.append(np.mean(timestep_avg_losses))
+                max_losses.append(np.max(timestep_max_losses))
+                min_losses.append(np.min(timestep_min_losses))
+            else:
+                avg_losses.append(0.0)
+                max_losses.append(0.0)
+                min_losses.append(0.0)
+        
+        # Calculate consistency metrics
+        initial_avg_loss = avg_losses[0]
+        final_avg_loss = avg_losses[-1]
+        
+        # Consistency trend
+        if initial_avg_loss > 0:
+            consistency_trend = (initial_avg_loss - final_avg_loss) / initial_avg_loss
+        else:
+            consistency_trend = 0
+        
+        # Loss stability
+        if len(avg_losses) > 10:
+            final_stability = np.std(avg_losses[-10:])
+        else:
+            final_stability = np.std(avg_losses)
+        
+        # Overall consistency score (lower is better)
+        overall_consistency = 1.0 - np.mean(avg_losses)
+        
+        return {
+            'overall_consistency': overall_consistency,
+            'consistency_trend': consistency_trend,
+            'final_stability': final_stability,
+            'initial_avg_loss': initial_avg_loss,
+            'final_avg_loss': final_avg_loss,
+            'avg_loss_history': avg_losses,
+            'max_loss_history': max_losses,
+            'min_loss_history': min_losses
+        }
+    
+    def assess_opinion_dynamics_performance(self, opinion_history: List[np.ndarray], 
+                                          loss_metrics_history: List[Dict[int, Dict[str, Any]]]) -> Dict[str, Any]:
+        """
+        Evaluate how well LLM maintains opinion dynamics.
+        
+        Args:
+            opinion_history: History of opinion vectors over time
+            loss_metrics_history: History of loss metrics
+            
+        Returns:
+            Dictionary containing opinion dynamics performance analysis
+        """
+        if not opinion_history or len(opinion_history) < 2:
+            return {}
+        
+        # Calculate opinion change rates
+        opinion_changes = []
+        for i in range(1, len(opinion_history)):
+            if opinion_history[i] is not None and opinion_history[i-1] is not None:
+                change = np.mean(np.abs(opinion_history[i] - opinion_history[i-1]))
+                opinion_changes.append(change)
+            else:
+                opinion_changes.append(0.0)
+        
+        # Calculate dynamics metrics
+        avg_change_rate = np.mean(opinion_changes)
+        change_variance = np.var(opinion_changes)
+        
+        # Assess if opinions are actually changing
+        significant_changes = [c for c in opinion_changes if c > 0.01]  # Threshold for significant change
+        change_frequency = len(significant_changes) / len(opinion_changes) if opinion_changes else 0
+        
+        # Calculate loss-consistency correlation
+        loss_consistency_correlation = 0.0
+        if loss_metrics_history and len(loss_metrics_history) == len(opinion_history):
+            avg_losses = []
+            for timestep_losses in loss_metrics_history:
+                if timestep_losses is not None:
+                    timestep_avg_losses = [data['average_loss'] for data in timestep_losses.values()]
+                    avg_losses.append(np.mean(timestep_avg_losses))
+                else:
+                    avg_losses.append(0.0)
+            
+            if len(avg_losses) == len(opinion_changes):
+                # Calculate correlation between opinion changes and loss
+                correlation_matrix = np.corrcoef(opinion_changes, avg_losses)
+                loss_consistency_correlation = correlation_matrix[0, 1] if not np.isnan(correlation_matrix[0, 1]) else 0.0
+        
+        # Overall performance score
+        # Higher score = better performance (more changes, lower loss, higher consistency)
+        performance_score = (change_frequency * 0.4 + 
+                           (1.0 - np.mean(avg_losses)) * 0.4 + 
+                           (1.0 + loss_consistency_correlation) * 0.2)
+        
+        return {
+            'avg_change_rate': avg_change_rate,
+            'change_variance': change_variance,
+            'change_frequency': change_frequency,
+            'significant_changes_count': len(significant_changes),
+            'loss_consistency_correlation': loss_consistency_correlation,
+            'performance_score': performance_score,
+            'opinion_changes': opinion_changes
         }
     
     def analyze_echo_chambers(self, adjacency_matrix: np.ndarray, opinion_matrix: np.ndarray, 
                             similarity_threshold: float = 0.8) -> Dict[str, Any]:
         """
-        Analyze echo chamber formation and characteristics.
+        Analyze echo chambers in the network.
         
         Args:
             adjacency_matrix: Network adjacency matrix
-            opinion_matrix: Current opinion matrix
+            opinion_matrix: Opinion vector (single topic)
             similarity_threshold: Threshold for echo chamber detection
             
         Returns:
             Dictionary containing echo chamber analysis
         """
-        # Calculate opinion similarity matrix
         n_agents = len(opinion_matrix)
+        
+        # Calculate opinion similarity matrix
         similarity_matrix = np.zeros((n_agents, n_agents))
         
         for i in range(n_agents):
             for j in range(n_agents):
                 if i != j:
                     # Calculate opinion similarity (1 - normalized L1 distance)
-                    opinion_diff = np.linalg.norm(opinion_matrix[i] - opinion_matrix[j], ord=1)
-                    max_possible_diff = len(opinion_matrix[i])
+                    # For single topic, just use absolute difference
+                    opinion_diff = abs(opinion_matrix[i] - opinion_matrix[j])
+                    max_possible_diff = 1.0  # Single topic, max difference is 1
                     similarity = 1 - (opinion_diff / max_possible_diff)
                     similarity_matrix[i, j] = max(0, similarity)
         
-        # Find echo chambers (connected components with high similarity)
-        echo_chamber_graph = (adjacency_matrix > 0) & (similarity_matrix > similarity_threshold)
-        
-        # Use networkx to find connected components
+        # Find echo chambers using connected components with high similarity
         import networkx as nx
+        
+        # Create graph where edges exist if both connected and similar
+        echo_chamber_graph = (adjacency_matrix > 0) & (similarity_matrix > similarity_threshold)
         G = nx.from_numpy_array(echo_chamber_graph.astype(int))
         components = list(nx.connected_components(G))
         
         # Filter out single-node components
         echo_chambers = [list(comp) for comp in components if len(comp) > 1]
         
-        # Analyze echo chamber characteristics
+        # Analyze echo chambers
         chamber_sizes = [len(chamber) for chamber in echo_chambers]
         chamber_opinions = []
         
         for chamber in echo_chambers:
-            chamber_opinion = np.mean([opinion_matrix[i] for i in chamber], axis=0)
+            chamber_opinion = np.mean([opinion_matrix[i] for i in chamber])
             chamber_opinions.append(chamber_opinion)
         
-        # Calculate echo chamber metrics
-        total_echo_chamber_agents = sum(chamber_sizes)
-        echo_chamber_coverage = total_echo_chamber_agents / n_agents if n_agents > 0 else 0
-        
-        # Calculate opinion polarization within echo chambers
-        polarization_scores = []
-        for chamber in echo_chambers:
-            if len(chamber) > 1:
-                chamber_opinions_subset = [opinion_matrix[i] for i in chamber]
-                # Calculate opinion variance within chamber
-                variance = np.var(chamber_opinions_subset)
-                polarization_scores.append(variance)
-        
-        avg_polarization = np.mean(polarization_scores) if polarization_scores else 0
-        
         return {
-            'num_echo_chambers': len(echo_chambers),
-            'echo_chamber_sizes': chamber_sizes,
-            'echo_chamber_coverage': echo_chamber_coverage,
-            'avg_echo_chamber_size': np.mean(chamber_sizes) if chamber_sizes else 0,
-            'max_echo_chamber_size': max(chamber_sizes) if chamber_sizes else 0,
+            'echo_chambers': echo_chambers,
+            'chamber_sizes': chamber_sizes,
             'chamber_opinions': chamber_opinions,
-            'avg_polarization': avg_polarization,
-            'echo_chambers': echo_chambers
+            'num_echo_chambers': len(echo_chambers),
+            'total_echo_chamber_agents': sum(chamber_sizes),
+            'avg_chamber_size': np.mean(chamber_sizes) if chamber_sizes else 0,
+            'max_chamber_size': max(chamber_sizes) if chamber_sizes else 0
         }
     
     def analyze_opinion_distribution(self, opinion_matrix: np.ndarray) -> Dict[str, Any]:
         """
-        Analyze the distribution of opinions across agents.
+        Analyze opinion distribution.
         
         Args:
-            opinion_matrix: Current opinion matrix
+            opinion_matrix: Opinion vector (single topic)
             
         Returns:
             Dictionary containing opinion distribution analysis
         """
-        n_agents, n_topics = opinion_matrix.shape
+        n_agents = len(opinion_matrix)
         
-        # Calculate basic statistics for each topic
-        topic_stats = {}
-        for topic_idx in range(n_topics):
-            opinions = opinion_matrix[:, topic_idx]
-            topic_stats[f'topic_{topic_idx}'] = {
-                'mean': np.mean(opinions),
-                'std': np.std(opinions),
-                'min': np.min(opinions),
-                'max': np.max(opinions),
-                'median': np.median(opinions),
-                'skewness': self._calculate_skewness(opinions),
-                'kurtosis': self._calculate_kurtosis(opinions)
-            }
+        # Calculate basic statistics
+        opinion_stats = {
+            'mean': np.mean(opinion_matrix),
+            'std': np.std(opinion_matrix),
+            'min': np.min(opinion_matrix),
+            'max': np.max(opinion_matrix),
+            'median': np.median(opinion_matrix),
+            'skewness': self._calculate_skewness(opinion_matrix),
+            'kurtosis': self._calculate_kurtosis(opinion_matrix)
+        }
         
         # Calculate overall opinion diversity
         overall_variance = np.var(opinion_matrix)
@@ -177,12 +283,11 @@ class BiasAnalyzer:
         opinion_clusters = self._detect_opinion_clusters(opinion_matrix)
         
         return {
-            'topic_statistics': topic_stats,
+            'opinion_statistics': opinion_stats,
             'overall_variance': overall_variance,
             'overall_entropy': overall_entropy,
             'opinion_clusters': opinion_clusters,
-            'n_agents': n_agents,
-            'n_topics': n_topics
+            'n_agents': n_agents
         }
     
     def _calculate_skewness(self, data: np.ndarray) -> float:
@@ -204,10 +309,18 @@ class BiasAnalyzer:
         return kurtosis
     
     def _calculate_opinion_entropy(self, opinion_matrix: np.ndarray) -> float:
-        """Calculate entropy of opinion distribution."""
+        """
+        Calculate entropy of opinion distribution.
+        
+        Args:
+            opinion_matrix: Opinion vector (single topic)
+            
+        Returns:
+            Entropy value
+        """
         # Discretize opinions into bins for entropy calculation
         n_bins = 10
-        binned_opinions = np.digitize(opinion_matrix.flatten(), bins=np.linspace(0, 1, n_bins))
+        binned_opinions = np.digitize(opinion_matrix, bins=np.linspace(0, 1, n_bins))
         
         # Calculate entropy
         unique, counts = np.unique(binned_opinions, return_counts=True)
@@ -217,55 +330,49 @@ class BiasAnalyzer:
         return entropy
     
     def _detect_opinion_clusters(self, opinion_matrix: np.ndarray, n_clusters: int = 3) -> Dict[str, Any]:
-        """Detect opinion clusters using k-means clustering."""
-        try:
-            from sklearn.cluster import KMeans
-            from sklearn.decomposition import PCA
+        """
+        Detect opinion clusters using K-means clustering.
+        
+        Args:
+            opinion_matrix: Opinion vector (single topic)
+            n_clusters: Number of clusters to detect
             
-            # Reduce dimensionality if needed
-            if opinion_matrix.shape[1] > 2:
-                pca = PCA(n_components=2)
-                reduced_opinions = pca.fit_transform(opinion_matrix)
-            else:
-                reduced_opinions = opinion_matrix
+        Returns:
+            Dictionary containing cluster analysis
+        """
+        from sklearn.cluster import KMeans
+        
+        # Reshape for clustering (single dimension)
+        X = opinion_matrix.reshape(-1, 1)
+        
+        # Perform K-means clustering
+        kmeans = KMeans(n_clusters=min(n_clusters, len(opinion_matrix)), random_state=42)
+        cluster_labels = kmeans.fit_predict(X)
+        
+        # Calculate cluster statistics
+        cluster_sizes = []
+        cluster_centers = []
+        cluster_variances = []
+        
+        for i in range(kmeans.n_clusters):
+            cluster_mask = cluster_labels == i
+            cluster_data = opinion_matrix[cluster_mask]
             
-            # Perform clustering
-            kmeans = KMeans(n_clusters=min(n_clusters, len(opinion_matrix)), random_state=42)
-            cluster_labels = kmeans.fit_predict(reduced_opinions)
-            
-            # Analyze clusters
-            cluster_sizes = []
-            cluster_centers = []
-            cluster_variances = []
-            
-            for i in range(kmeans.n_clusters_):
-                cluster_mask = cluster_labels == i
-                cluster_opinions = opinion_matrix[cluster_mask]
-                
-                cluster_sizes.append(np.sum(cluster_mask))
-                cluster_centers.append(np.mean(cluster_opinions, axis=0))
-                cluster_variances.append(np.var(cluster_opinions))
-            
-            return {
-                'cluster_labels': cluster_labels.tolist(),
-                'cluster_sizes': cluster_sizes,
-                'cluster_centers': [center.tolist() for center in cluster_centers],
-                'cluster_variances': cluster_variances,
-                'n_clusters': kmeans.n_clusters_
-            }
-        except ImportError:
-            # Fallback if sklearn is not available
-            return {
-                'cluster_labels': [0] * len(opinion_matrix),
-                'cluster_sizes': [len(opinion_matrix)],
-                'cluster_centers': [np.mean(opinion_matrix, axis=0).tolist()],
-                'cluster_variances': [np.var(opinion_matrix)],
-                'n_clusters': 1
-            }
+            cluster_sizes.append(len(cluster_data))
+            cluster_centers.append(np.mean(cluster_data))
+            cluster_variances.append(np.var(cluster_data))
+        
+        return {
+            'cluster_labels': cluster_labels.tolist(),
+            'cluster_sizes': cluster_sizes,
+            'cluster_centers': cluster_centers,
+            'cluster_variances': cluster_variances,
+            'n_clusters': kmeans.n_clusters
+        }
     
     def compare_simulations(self, results1: Dict[str, Any], results2: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Compare two simulation results to detect bias.
+        Compare two simulation results.
         
         Args:
             results1: Results from first simulation
@@ -277,74 +384,39 @@ class BiasAnalyzer:
         comparison = {}
         
         # Compare convergence patterns
-        conv1 = results1.get('convergence_analysis', {})
-        conv2 = results2.get('convergence_analysis', {})
-        
-        comparison['convergence_speed_diff'] = conv1.get('convergence_speed', 0) - conv2.get('convergence_speed', 0)
-        comparison['convergence_time_diff'] = conv1.get('convergence_time', 0) - conv2.get('convergence_time', 0)
-        comparison['final_variance_diff'] = conv1.get('final_variance', 0) - conv2.get('final_variance', 0)
-        
-        # Compare echo chamber formation
-        echo1 = results1.get('echo_chamber_analysis', {})
-        echo2 = results2.get('echo_chamber_analysis', {})
-        
-        comparison['echo_chamber_count_diff'] = echo1.get('num_echo_chambers', 0) - echo2.get('num_echo_chambers', 0)
-        comparison['echo_chamber_coverage_diff'] = echo1.get('echo_chamber_coverage', 0) - echo2.get('echo_chamber_coverage', 0)
-        comparison['avg_echo_chamber_size_diff'] = echo1.get('avg_echo_chamber_size', 0) - echo2.get('avg_echo_chamber_size', 0)
-        
-        # Compare opinion distribution
-        dist1 = results1.get('opinion_distribution_analysis', {})
-        dist2 = results2.get('opinion_distribution_analysis', {})
-        
-        comparison['overall_variance_diff'] = dist1.get('overall_variance', 0) - dist2.get('overall_variance', 0)
-        comparison['overall_entropy_diff'] = dist1.get('overall_entropy', 0) - dist2.get('overall_entropy', 0)
-        
-        # Determine if bias is detected
-        bias_threshold = 0.1  # Configurable threshold
-        bias_indicators = [
-            abs(comparison['convergence_speed_diff']) > bias_threshold,
-            abs(comparison['echo_chamber_coverage_diff']) > bias_threshold,
-            abs(comparison['overall_variance_diff']) > bias_threshold
-        ]
-        
-        comparison['bias_detected'] = any(bias_indicators)
-        comparison['bias_confidence'] = sum(bias_indicators) / len(bias_indicators)
-        
-        return comparison
-    
-    def generate_bias_report(self, comparison_results: Dict[str, Any]) -> str:
-        """
-        Generate a human-readable bias report.
-        
-        Args:
-            comparison_results: Results from bias comparison
+        if 'convergence_analysis' in results1 and 'convergence_analysis' in results2:
+            conv1 = results1['convergence_analysis']
+            conv2 = results2['convergence_analysis']
             
-        Returns:
-            Formatted report string
-        """
-        report = "BIAS ANALYSIS REPORT\n"
-        report += "=" * 30 + "\n\n"
+            comparison['convergence_comparison'] = {
+                'speed_difference': conv1.get('convergence_speed', 0) - conv2.get('convergence_speed', 0),
+                'time_difference': conv1.get('convergence_time', 0) - conv2.get('convergence_time', 0),
+                'stability_difference': conv1.get('final_stability', 0) - conv2.get('final_stability', 0)
+            }
         
-        # Convergence analysis
-        report += "CONVERGENCE ANALYSIS:\n"
-        report += f"  Convergence speed difference: {comparison_results.get('convergence_speed_diff', 0):.4f}\n"
-        report += f"  Convergence time difference: {comparison_results.get('convergence_time_diff', 0):.0f} timesteps\n"
-        report += f"  Final variance difference: {comparison_results.get('final_variance_diff', 0):.4f}\n\n"
+        # Compare echo chambers
+        if 'echo_chamber_analysis' in results1 and 'echo_chamber_analysis' in results2:
+            echo1 = results1['echo_chamber_analysis']
+            echo2 = results2['echo_chamber_analysis']
+            
+            comparison['echo_chamber_comparison'] = {
+                'num_chambers_difference': echo1.get('num_echo_chambers', 0) - echo2.get('num_echo_chambers', 0),
+                'total_agents_difference': echo1.get('total_echo_chamber_agents', 0) - echo2.get('total_echo_chamber_agents', 0),
+                'avg_size_difference': echo1.get('avg_chamber_size', 0) - echo2.get('avg_chamber_size', 0)
+            }
         
-        # Echo chamber analysis
-        report += "ECHO CHAMBER ANALYSIS:\n"
-        report += f"  Echo chamber count difference: {comparison_results.get('echo_chamber_count_diff', 0):.0f}\n"
-        report += f"  Echo chamber coverage difference: {comparison_results.get('echo_chamber_coverage_diff', 0):.4f}\n"
-        report += f"  Average chamber size difference: {comparison_results.get('avg_echo_chamber_size_diff', 0):.2f}\n\n"
+        # Compare opinion distributions
+        if 'opinion_distribution' in results1 and 'opinion_distribution' in results2:
+            dist1 = results1['opinion_distribution']
+            dist2 = results2['opinion_distribution']
+            
+            stats1 = dist1.get('opinion_statistics', {})
+            stats2 = dist2.get('opinion_statistics', {})
+            
+            comparison['opinion_comparison'] = {
+                'mean_difference': stats1.get('mean', 0) - stats2.get('mean', 0),
+                'variance_difference': dist1.get('overall_variance', 0) - dist2.get('overall_variance', 0),
+                'entropy_difference': dist1.get('overall_entropy', 0) - dist2.get('overall_entropy', 0)
+            }
         
-        # Opinion distribution analysis
-        report += "OPINION DISTRIBUTION ANALYSIS:\n"
-        report += f"  Overall variance difference: {comparison_results.get('overall_variance_diff', 0):.4f}\n"
-        report += f"  Overall entropy difference: {comparison_results.get('overall_entropy_diff', 0):.4f}\n\n"
-        
-        # Bias detection
-        report += "BIAS DETECTION:\n"
-        report += f"  Bias detected: {comparison_results.get('bias_detected', False)}\n"
-        report += f"  Bias confidence: {comparison_results.get('bias_confidence', 0):.2f}\n"
-        
-        return report 
+        return comparison 

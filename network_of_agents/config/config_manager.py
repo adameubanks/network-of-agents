@@ -1,295 +1,165 @@
 """
-Configuration manager for loading and validating simulation configurations.
+Configuration manager for the network of agents simulation.
 """
 
-import yaml
-import os
-from typing import Dict, Any, Optional, List
+import json
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 
 class ConfigManager:
     """
-    Manages configuration loading and validation for the simulation.
+    Manages configuration for the simulation.
     """
     
-    def __init__(self, config_dir: str = "config"):
+    def __init__(self, config_path: Optional[str] = None):
         """
-        Initialize the configuration manager.
+        Initialize configuration manager.
         
         Args:
-            config_dir: Directory containing configuration files
+            config_path: Path to configuration file (JSON)
         """
-        self.config_dir = Path(config_dir)
-        self.configs = {}
-        self.load_all_configs()
+        self.config_path = config_path or "config.json"
+        self.config = self._load_config()
     
-    def load_all_configs(self):
-        """Load all configuration files from the config directory."""
-        if not self.config_dir.exists():
-            print(f"Warning: Config directory {self.config_dir} does not exist")
-            return
+    def _load_config(self) -> Dict[str, Any]:
+        """Load configuration from JSON file."""
+        config_path = Path(self.config_path)
         
-        for config_file in self.config_dir.glob("*.yaml"):
-            config_name = config_file.stem
-            self.configs[config_name] = self.load_config(config_file)
+        if not config_path.exists():
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
+        
+        with open(config_path, 'r') as f:
+            return json.load(f)
     
-    def load_config(self, config_path: Path) -> Dict[str, Any]:
+    def get(self, key: str, default: Any = None) -> Any:
         """
-        Load a configuration file.
+        Get configuration value.
         
         Args:
-            config_path: Path to the configuration file
+            key: Configuration key
+            default: Default value if key not found
             
         Returns:
-            Configuration dictionary
+            Configuration value
         """
-        try:
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-            return config
-        except Exception as e:
-            print(f"Error loading config {config_path}: {e}")
-            return {}
-    
-    def get_config(self, config_name: str, default: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        Get a specific configuration.
+        keys = key.split('.')
+        value = self.config
         
-        Args:
-            config_name: Name of the configuration
-            default: Default value to return if config not found
-            
-        Returns:
-            Configuration dictionary
-        """
-        if default is None:
-            default = {}
-        return self.configs.get(config_name, default)
+        for k in keys:
+            if isinstance(value, dict) and k in value:
+                value = value[k]
+            else:
+                return default
+        
+        return value
     
-    def get_simulation_config(self) -> Dict[str, Any]:
+    def get_simulation_params(self) -> Dict[str, Any]:
         """
-        Get simulation configuration.
+        Get simulation parameters.
         
         Returns:
-            Simulation configuration dictionary
+            Dictionary of simulation parameters
         """
-        return self.get_config("default_config").get("simulation", {})
+        return {
+            'n_agents': int(self.get('simulation.n_agents', 30)),
+            'epsilon': float(self.get('simulation.epsilon', 0.001)),
+            'theta': int(self.get('simulation.theta', 7)),
+            'num_timesteps': int(self.get('simulation.num_timesteps', 300)),
+            'initial_connection_probability': float(self.get('simulation.initial_connection_probability', 0.05)),
+            'random_seed': self.get('simulation.random_seed'),
+            'initial_opinion_diversity': float(self.get('simulation.initial_opinion_diversity', 0.8))
+        }
     
-    def get_llm_config(self) -> Dict[str, Any]:
+    def get_llm_params(self) -> Dict[str, Any]:
         """
-        Get LLM configuration.
+        Get LLM parameters.
         
         Returns:
-            LLM configuration dictionary
+            Dictionary of LLM parameters
         """
-        return self.get_config("default_config").get("llm", {})
+        return {
+            'model': str(self.get('llm.model', 'gpt-4')),
+            'max_tokens': int(self.get('llm.max_tokens', 1000)),
+            'temperature': float(self.get('llm.temperature', 0.7)),
+            'api_key_env': str(self.get('llm.api_key_env', 'OPENAI_API_KEY'))
+        }
     
-    def get_visualization_config(self) -> Dict[str, Any]:
+    def get_topics(self) -> list:
         """
-        Get visualization configuration.
+        Get topics list.
         
         Returns:
-            Visualization configuration dictionary
+            List of topics
         """
-        return self.get_config("default_config").get("visualization", {})
+        return self.get('topics', ['Climate Change', 'Economic Policy', 'Social Justice'])
     
-    def get_storage_config(self) -> Dict[str, Any]:
+    def get_bias_testing_params(self) -> Dict[str, Any]:
         """
-        Get storage configuration.
+        Get bias testing parameters.
         
         Returns:
-            Storage configuration dictionary
+            Dictionary of bias testing parameters
         """
-        return self.get_config("default_config").get("storage", {})
+        return {
+            'enabled': bool(self.get('bias_testing.enabled', True)),
+            'topic_pairs': self.get('bias_testing.topic_pairs', []),
+            'use_consistent_seeds': bool(self.get('bias_testing.use_consistent_seeds', True)),
+            'seed_base': int(self.get('bias_testing.seed_base', 42))
+        }
     
-    def get_bias_testing_config(self) -> Dict[str, Any]:
+    def get_visualization_params(self) -> Dict[str, Any]:
         """
-        Get bias testing configuration.
+        Get visualization parameters.
         
         Returns:
-            Bias testing configuration dictionary
+            Dictionary of visualization parameters
         """
-        return self.get_config("default_config").get("bias_testing", {})
+        return {
+            'plot_style': str(self.get('visualization.plot_style', 'seaborn')),
+            'figure_size': self.get('visualization.figure_size', [12, 8]),
+            'dpi': int(self.get('visualization.dpi', 300))
+        }
     
-    def get_topics_config(self) -> Dict[str, Any]:
+    def get_output_directory(self) -> str:
         """
-        Get topics configuration.
+        Get output directory.
         
         Returns:
-            Topics configuration dictionary
+            Output directory path
         """
-        return self.get_config("topics_config", {})
+        return str(self.get('output_directory', 'simulation_results'))
     
-    def get_topic_pairs(self, pair_type: str = "language_bias") -> List[List[str]]:
+    def validate_config(self) -> bool:
         """
-        Get topic pairs for bias testing.
-        
-        Args:
-            pair_type: Type of topic pairs ("language_bias" or "framing_bias")
-            
-        Returns:
-            List of topic pairs
-        """
-        topics_config = self.get_topics_config()
-        topic_pairs = topics_config.get("topic_pairs", {})
-        return topic_pairs.get(pair_type, [])
-    
-    def get_political_topics(self) -> List[str]:
-        """
-        Get political topics.
+        Validate configuration.
         
         Returns:
-            List of political topics
+            True if configuration is valid
         """
-        topics_config = self.get_topics_config()
-        return topics_config.get("political_topics", [])
-    
-    def get_social_topics(self) -> List[str]:
-        """
-        Get social topics.
+        required_keys = ['n_agents', 'epsilon', 'theta', 'num_timesteps']
         
-        Returns:
-            List of social topics
-        """
-        topics_config = self.get_topics_config()
-        return topics_config.get("social_topics", [])
-    
-    def get_economic_topics(self) -> List[str]:
-        """
-        Get economic topics.
+        sim_params = self.get_simulation_params()
         
-        Returns:
-            List of economic topics
-        """
-        topics_config = self.get_topics_config()
-        return topics_config.get("economic_topics", [])
-    
-    def get_technology_topics(self) -> List[str]:
-        """
-        Get technology topics.
-        
-        Returns:
-            List of technology topics
-        """
-        topics_config = self.get_topics_config()
-        return topics_config.get("technology_topics", [])
-    
-    def get_neutral_topics(self) -> List[str]:
-        """
-        Get neutral topics.
-        
-        Returns:
-            List of neutral topics
-        """
-        topics_config = self.get_topics_config()
-        return topics_config.get("neutral_topics", [])
-    
-    def validate_config(self, config: Dict[str, Any]) -> bool:
-        """
-        Validate a configuration dictionary.
-        
-        Args:
-            config: Configuration to validate
-            
-        Returns:
-            True if valid, False otherwise
-        """
-        required_simulation_keys = ["n_agents", "n_topics", "epsilon", "theta", "num_timesteps"]
-        
-        simulation_config = config.get("simulation", {})
-        for key in required_simulation_keys:
-            if key not in simulation_config:
-                print(f"Missing required simulation parameter: {key}")
+        for key in required_keys:
+            if key not in sim_params:
+                print(f"Error: Missing required parameter '{key}'")
                 return False
         
-        # Validate parameter ranges
-        if simulation_config["n_agents"] <= 0:
-            print("n_agents must be positive")
+        if sim_params['n_agents'] <= 0:
+            print("Error: n_agents must be positive")
             return False
         
-        if simulation_config["n_topics"] <= 0:
-            print("n_topics must be positive")
+        if sim_params['epsilon'] <= 0:
+            print("Error: epsilon must be positive")
             return False
         
-        if simulation_config["epsilon"] <= 0:
-            print("epsilon must be positive")
+        if sim_params['theta'] <= 0:
+            print("Error: theta must be positive")
             return False
         
-        if simulation_config["theta"] <= 0:
-            print("theta must be positive")
+        if sim_params['num_timesteps'] <= 0:
+            print("Error: num_timesteps must be positive")
             return False
         
-        if simulation_config["num_timesteps"] <= 0:
-            print("num_timesteps must be positive")
-            return False
-        
-        return True
-    
-    def create_simulation_config(self, 
-                                n_agents: int = 50,
-                                n_topics: int = 3,
-                                topics: Optional[List[str]] = None,
-                                **kwargs) -> Dict[str, Any]:
-        """
-        Create a simulation configuration.
-        
-        Args:
-            n_agents: Number of agents
-            n_topics: Number of topics
-            topics: List of topics
-            **kwargs: Additional configuration parameters
-            
-        Returns:
-            Simulation configuration dictionary
-        """
-        # Get default configuration
-        default_config = self.get_simulation_config()
-        
-        # Create custom configuration
-        config = {
-            "simulation": {
-                "n_agents": n_agents,
-                "n_topics": n_topics,
-                "epsilon": kwargs.get("epsilon", default_config.get("epsilon", 1e-6)),
-                "theta": kwargs.get("theta", default_config.get("theta", 7)),
-                "num_timesteps": kwargs.get("num_timesteps", default_config.get("num_timesteps", 180)),
-                "initial_connection_probability": kwargs.get("initial_connection_probability", 
-                                                           default_config.get("initial_connection_probability", 0.2))
-            },
-            "llm": self.get_llm_config(),
-            "visualization": self.get_visualization_config(),
-            "storage": self.get_storage_config(),
-            "bias_testing": self.get_bias_testing_config()
-        }
-        
-        # Add topics if provided
-        if topics:
-            config["topics"] = topics
-        
-        return config
-    
-    def save_config(self, config: Dict[str, Any], filename: str):
-        """
-        Save a configuration to a file.
-        
-        Args:
-            config: Configuration to save
-            filename: Name of the file to save to
-        """
-        config_path = self.config_dir / filename
-        
-        try:
-            with open(config_path, 'w') as f:
-                yaml.dump(config, f, default_flow_style=False, indent=2)
-        except Exception as e:
-            print(f"Error saving config {config_path}: {e}")
-    
-    def get_all_configs(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Get all loaded configurations.
-        
-        Returns:
-            Dictionary of all configurations
-        """
-        return self.configs.copy() 
+        return True 

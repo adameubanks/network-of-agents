@@ -1,7 +1,3 @@
-"""
-Bias testing framework for the network of agents simulation.
-"""
-
 from .scenarios import BiasTestingScenarios
 from .analyzer import BiasAnalyzer
 

@@ -1,0 +1,18 @@
+{
+  "simulation": {
+    "n_agents": 10,
+    "epsilon": 0.001,
+    "theta": 7,
+    "num_timesteps": 50,
+    "initial_connection_probability": 0.2,
+    "random_seed": null,
+    "initial_opinion_diversity": 0.8
+  },
+  "llm": {
+    "model": "gpt-4o-mini",
+    "temperature": 0.7,
+    "api_key_env": "OPENAI_API_KEY"
+  },
+  "topic": "Climate Change",
+  "output_directory": "simulation_results"
+} 

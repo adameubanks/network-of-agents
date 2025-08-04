@@ -1,18 +1,19 @@
 """
-LiteLLM client for API integration with various LLM providers.
+Simplified LiteLLM client for opinion interpretation and generation.
 """
 
 import os
 from typing import Dict, List, Optional, Any
 import litellm
 from dotenv import load_dotenv
+import re
 
 load_dotenv()
 
 
 class LiteLLMClient:
     """
-    Client for interacting with LLM APIs using LiteLLM.
+    Simplified client for LLM-based opinion interpretation and generation.
     """
     
     def __init__(self, model_name: str = "gpt-4", api_key: Optional[str] = None):
@@ -32,7 +33,71 @@ class LiteLLMClient:
         # Set the API key for LiteLLM
         litellm.api_key = self.api_key
     
-    def generate_text(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7) -> str:
+    def interpret_text_to_opinions(self, text: str, topics: List[str]) -> List[float]:
+        """
+        Interpret text content to extract opinion values for given topics.
+        
+        Args:
+            text: Text content to analyze
+            topics: List of topics to extract opinions for
+            
+        Returns:
+            List of opinion values (0-1) for each topic
+        """
+        prompt = f"""
+Analyze the following text and provide opinion values for each topic.
+For each topic, provide a single number between 0 and 1:
+0 = strongly oppose/disagree
+1 = strongly support/agree
+
+Text to analyze: "{text}"
+
+Topics: {', '.join(topics)}
+
+IMPORTANT: Respond with ONLY a comma-separated list of numbers, one for each topic, in order.
+Do not include any explanations, text, or other content.
+Example format: 0.8, 0.2, 0.9
+"""
+        
+        response = self._generate_text(prompt, max_tokens=200, temperature=0.3)
+        return self._parse_opinion_response(response, len(topics))
+    
+    def generate_text_from_opinions(self, topics: List[str], opinion_vector: List[float]) -> str:
+        """
+        Generate text content that reflects the given opinion vector.
+        
+        Args:
+            topics: List of topics
+            opinion_vector: Opinion values (0-1) for each topic
+            
+        Returns:
+            Generated text reflecting the opinions
+        """
+        # Create a description of the opinions
+        opinion_desc = []
+        for i, (topic, opinion) in enumerate(zip(topics, opinion_vector)):
+            if opinion > 0.7:
+                stance = "strongly support"
+            elif opinion > 0.5:
+                stance = "support"
+            elif opinion > 0.3:
+                stance = "somewhat oppose"
+            else:
+                stance = "strongly oppose"
+            opinion_desc.append(f"{topic}: {stance} ({opinion:.2f})")
+        
+        prompt = f"""
+Generate a short social media post that reflects the following opinions:
+
+{', '.join(opinion_desc)}
+
+The post should be natural, conversational, and reflect these opinions without being overly explicit.
+Keep it under 200 words.
+"""
+        
+        return self._generate_text(prompt, max_tokens=300, temperature=0.7)
+    
+    def _generate_text(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7) -> str:
         """
         Generate text using the LLM.
         
@@ -44,113 +109,85 @@ class LiteLLMClient:
         Returns:
             Generated text
         """
-        try:
-            response = litellm.completion(
-                model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"Error generating text: {e}")
-            return ""
+        response = litellm.completion(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+        return response.choices[0].message.content
     
-    def generate_opinion_vector(self, topics: List[str], persona: str) -> List[float]:
+    def _parse_opinion_response(self, response: str, expected_count: int) -> List[float]:
         """
-        Generate an opinion vector for a given persona and topics.
+        Parse LLM response to extract opinion values.
         
         Args:
-            topics: List of topics to generate opinions for
-            persona: Description of the agent persona
+            response: Raw LLM response
+            expected_count: Expected number of opinion values
             
         Returns:
-            List of opinion values (0-1) for each topic
+            List of opinion values
         """
-        prompt = f"""
-        You are an AI agent with the following persona: {persona}
+        # Clean the response - remove any non-numeric content
+        response = response.strip()
         
-        For each of the following topics, provide a single number between 0 and 1 representing your level of support:
-        0 = strongly oppose/disagree
-        1 = strongly support/agree
+        # Try to extract just the numeric part
+        numeric_match = re.search(r'[\d.,\s]+', response)
+        if numeric_match:
+            response = numeric_match.group()
         
-        Topics: {', '.join(topics)}
-        
-        Respond with only a comma-separated list of numbers, one for each topic, in order.
-        Example: 0.8, 0.2, 0.9
-        """
-        
-        response = self.generate_text(prompt, max_tokens=200, temperature=0.3)
-        
+        # Parse the response to extract numbers
         try:
-            # Parse the response to extract numbers
             opinions = [float(x.strip()) for x in response.split(',')]
-            
-            # Ensure we have the right number of opinions
-            if len(opinions) != len(topics):
-                raise ValueError(f"Expected {len(topics)} opinions, got {len(opinions)}")
-            
-            # Clamp values to [0, 1]
-            opinions = [max(0.0, min(1.0, op)) for op in opinions]
-            
-            return opinions
-        except Exception as e:
-            print(f"Error parsing opinion vector: {e}")
-            # Return random opinions as fallback
-            import random
-            return [random.random() for _ in topics]
+        except ValueError as e:
+            raise ValueError(f"Failed to parse LLM response '{response}': {e}")
+        
+        # Ensure we have the right number of opinions
+        if len(opinions) != expected_count:
+            raise ValueError(f"Expected {expected_count} opinions, got {len(opinions)} from response '{response}'")
+        
+        # Clamp values to [0, 1]
+        opinions = [max(0.0, min(1.0, op)) for op in opinions]
+        
+        return opinions
     
-    def analyze_converged_opinions(self, topics: List[str], opinion_vector: List[float]) -> str:
+    def measure_round_trip_loss(self, topics: List[str], original_opinions: List[float]) -> Dict[str, Any]:
         """
-        Generate content that reflects the converged opinion vector.
+        Measure the loss between original opinions and round-trip interpreted opinions.
         
         Args:
             topics: List of topics
-            opinion_vector: Opinion values for each topic
+            original_opinions: Original opinion values (0-1) for each topic
             
         Returns:
-            Generated content reflecting the opinions
+            Dictionary containing loss metrics and round-trip data
         """
-        prompt = f"""
-        Based on the following opinion values for these topics, generate a short social media post (2-3 sentences) that reflects these opinions:
+        # Generate text from original opinions
+        generated_text = self.generate_text_from_opinions(topics, original_opinions)
         
-        Topics and opinions:
-        {', '.join([f'{topic}: {opinion:.2f}' for topic, opinion in zip(topics, opinion_vector)])}
+        # Interpret the generated text back to opinions
+        interpreted_opinions = self.interpret_text_to_opinions(generated_text, topics)
         
-        The post should be natural and reflect the strength of opinions (higher values = stronger support).
-        """
+        # Calculate losses
+        losses = []
+        for i, (orig, interp) in enumerate(zip(original_opinions, interpreted_opinions)):
+            loss = abs(orig - interp)
+            losses.append(loss)
         
-        return self.generate_text(prompt, max_tokens=150, temperature=0.7)
-    
-    def detect_bias_patterns(self, topic_pairs: List[tuple], convergence_data: Dict) -> Dict[str, Any]:
-        """
-        Analyze bias patterns in convergence data.
-        
-        Args:
-            topic_pairs: List of topic pairs to compare (e.g., [("queers", "gays"), ...])
-            convergence_data: Dictionary containing convergence metrics for each topic
-            
-        Returns:
-            Dictionary containing bias analysis results
-        """
-        prompt = f"""
-        Analyze the following convergence data for potential bias patterns:
-        
-        Topic pairs: {topic_pairs}
-        Convergence data: {convergence_data}
-        
-        Look for:
-        1. Differences in convergence speed between topic pairs
-        2. Differences in final convergence points
-        3. Potential bias indicators
-        
-        Provide a brief analysis in 2-3 sentences.
-        """
-        
-        analysis = self.generate_text(prompt, max_tokens=300, temperature=0.5)
+        # Calculate metrics
+        total_loss = sum(losses)
+        average_loss = total_loss / len(losses) if losses else 0.0
+        max_loss = max(losses) if losses else 0.0
+        min_loss = min(losses) if losses else 0.0
         
         return {
-            "analysis": analysis,
-            "topic_pairs": topic_pairs,
-            "convergence_data": convergence_data
+            'original_opinions': original_opinions,
+            'generated_text': generated_text,
+            'interpreted_opinions': interpreted_opinions,
+            'losses': losses,
+            'total_loss': total_loss,
+            'average_loss': average_loss,
+            'max_loss': max_loss,
+            'min_loss': min_loss,
+            'topics': topics
         } 
