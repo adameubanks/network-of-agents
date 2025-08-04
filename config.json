@@ -5,14 +5,24 @@
     "theta": 7,
     "num_timesteps": 50,
     "initial_connection_probability": 0.2,
-    "random_seed": null,
-    "initial_opinion_diversity": 0.8
+    "random_seed": null
   },
   "llm": {
-    "model": "gpt-4o-mini",
-    "temperature": 0.7,
-    "api_key_env": "OPENAI_API_KEY"
+    "api_key_env": "OPENAI_API_KEY",
+    "batch": {
+      "max_workers": 50,
+      "timeout": 600,
+      "enable_fallback": true
+    }
   },
-  "topic": "Climate Change",
-  "output_directory": "simulation_results"
+  "topics": [
+    "gay rights",
+    "queer identity",
+    "transgender rights",
+    "climate change",
+    "republicans",
+    "democrats",
+    "donald trump",
+    "joe biden"
+  ]
 } 

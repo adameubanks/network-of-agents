@@ -2,6 +2,6 @@
 Simulation controller for the network of agents.
 """
 
-from .controller import SimulationController
+from .controller import Controller
 
-__all__ = ["SimulationController"] 
+__all__ = ["Controller"] 

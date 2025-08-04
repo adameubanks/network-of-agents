@@ -40,7 +40,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "network-agents=network_of_agents.main:main",
+            "network-agents=main:main",
         ],
     },
 ) 

@@ -1,9 +1,9 @@
-from .simulation.controller import SimulationController
+from .simulation.controller import Controller
 from .network.graph_model import NetworkModel
-from .llm.agent import LLMAgent
+from .agent import Agent
 
 __all__ = [
-    "SimulationController",
+    "Controller",
     "NetworkModel", 
-    "LLMAgent",
+    "Agent",
 ] 

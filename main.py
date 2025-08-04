@@ -1,18 +1,18 @@
 """
-Simplified main script for opinion dynamics simulation.
+Streamlined main script for opinion dynamics simulation.
 """
 
 import json
 import os
 import argparse
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import time
 
 from dotenv import load_dotenv
 load_dotenv()
 
-from network_of_agents.simulation.controller import SimulationController
-from network_of_agents.llm.litellm_client import LiteLLMClient
+from network_of_agents.simulation.controller import Controller
+from network_of_agents.llm_client import LLMClient
 
 
 def load_config(config_path: str = "config.json") -> Dict[str, Any]:
@@ -29,7 +29,7 @@ def load_config(config_path: str = "config.json") -> Dict[str, Any]:
         return json.load(f)
 
 
-def create_llm_client(config: Dict[str, Any]) -> Optional[LiteLLMClient]:
+def create_llm_client(config: Dict[str, Any]) -> LLMClient:
     """
     Create LLM client from configuration.
     
@@ -37,46 +37,36 @@ def create_llm_client(config: Dict[str, Any]) -> Optional[LiteLLMClient]:
         config: Configuration dictionary
         
     Returns:
-        LiteLLM client or None if not configured
+        LLM client
     """
     llm_config = config.get('llm', {})
-    model_name = llm_config.get('model', 'gpt-4o-mini')
     api_key_env = llm_config.get('api_key_env', 'OPENAI_API_KEY')
     api_key = os.getenv(api_key_env)
     
     if not api_key:
-        print(f"Warning: No API key found in environment variable {api_key_env}")
-        print("Simulation will run without LLM encoding/decoding")
-        return None
+        raise ValueError(f"No API key found in environment variable {api_key_env}")
     
-    try:
-        return LiteLLMClient(model_name=model_name, api_key=api_key)
-    except Exception as e:
-        print(f"Warning: Failed to create LLM client: {e}")
-        print("Simulation will run without LLM encoding/decoding")
-        return None
+    # Get batch configuration
+    batch_config = llm_config.get('batch', {})
+    
+    return LLMClient(api_key=api_key, batch_config=batch_config)
 
 
-def run_simulation(config: Dict[str, Any], topic: Optional[str] = None, 
+def run_simulation(config: Dict[str, Any], topic: str, 
                    random_seed: Optional[int] = None) -> Dict[str, Any]:
     """
-    Run a single simulation.
+    Run a single simulation for one topic.
     
     Args:
         config: Configuration dictionary
-        topic: Override topic from config
+        topic: Topic to simulate
         random_seed: Override random seed from config
         
     Returns:
-        Simulation results
+        Simulation results for the topic
     """
     # Extract parameters
     sim_config = config['simulation']
-    output_dir = config.get('output_directory', 'simulation_results')
-    
-    # Use provided topic or default from config
-    if topic is None:
-        topic = config.get('topic', 'Climate Change')
     
     # Use provided seed or default from config
     if random_seed is None:
@@ -85,17 +75,16 @@ def run_simulation(config: Dict[str, Any], topic: Optional[str] = None,
     # Create LLM client
     llm_client = create_llm_client(config)
     
-    # Create controller
-    controller = SimulationController(
+    # Create controller with single topic
+    controller = Controller(
         n_agents=sim_config['n_agents'],
-        epsilon=sim_config['epsilon'],
-        theta=sim_config['theta'],
+        epsilon=sim_config.get('epsilon', 0.001),
+        theta=sim_config.get('theta', 7),
         num_timesteps=sim_config['num_timesteps'],
         initial_connection_probability=sim_config['initial_connection_probability'],
         llm_client=llm_client,
-        topics=[topic],
-        random_seed=random_seed,
-        initial_opinion_diversity=sim_config.get('initial_opinion_diversity')
+        topics=[topic],  # Single topic only
+        random_seed=random_seed
     )
     
     # Run simulation
@@ -106,25 +95,117 @@ def run_simulation(config: Dict[str, Any], topic: Optional[str] = None,
     
     print(f"Simulation completed in {end_time - start_time:.2f} seconds")
     
-    # Get basic results
-    opinion_history = controller.data_storage.get_opinion_history()
-    final_opinions = controller._get_opinion_matrix()
-    final_adjacency = controller.network.get_adjacency_matrix()
+    # Print final summary for this topic
+    final_opinions = results['final_opinions']
+    final_avg = sum(final_opinions) / len(final_opinions)
+    final_std = (sum((x - final_avg) ** 2 for x in final_opinions) / len(final_opinions)) ** 0.5
+    print(f"Final average opinion for '{topic}': {final_avg:.3f}")
+    print(f"Final opinion std dev for '{topic}': {final_std:.3f}")
     
-    # Print final summary
-    final_avg = final_opinions.mean()
-    final_std = final_opinions.std()
-    print(f"Final average opinion: {final_avg:.3f}")
-    print(f"Final opinion std dev: {final_std:.3f}")
+    # Add topic to results
+    results['topic'] = topic
     
-    return {
-        'topic': topic,
-        'opinion_history': [op.tolist() if op is not None else [] for op in opinion_history],
-        'final_opinions': final_opinions.tolist(),
-        'final_adjacency': final_adjacency.tolist(),
-        'simulation_params': sim_config,
-        'random_seed': random_seed
+    return results
+
+
+def run_all_topics(config: Dict[str, Any], random_seed: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Run simulations for all topics separately.
+    
+    Args:
+        config: Configuration dictionary
+        random_seed: Override random seed from config
+        
+    Returns:
+        Dictionary containing results for all topics
+    """
+    topics = config.get('topics', ['Climate Change'])
+    all_results = {}
+    
+    print("=" * 50)
+    print("RUNNING SIMULATIONS FOR ALL TOPICS")
+    print("=" * 50)
+    
+    for i, topic in enumerate(topics):
+        print(f"\nTopic {i+1}/{len(topics)}: {topic}")
+        print("-" * 30)
+        
+        try:
+            results = run_simulation(config, topic, random_seed)
+            all_results[topic] = results
+        except Exception as e:
+            print(f"Error simulating topic '{topic}': {e}")
+            all_results[topic] = {'error': str(e)}
+    
+    return all_results
+
+
+def analyze_topic_convergence(results: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Analyze convergence for a single topic.
+    
+    Args:
+        results: Simulation results for one topic
+        
+    Returns:
+        Convergence analysis
+    """
+    if 'error' in results:
+        return {'error': results['error']}
+    
+    mean_opinions = results['mean_opinions']
+    std_opinions = results['std_opinions']
+    
+    # Check for convergence in last 10 timesteps
+    if len(mean_opinions) > 10:
+        recent_mean = mean_opinions[-10:]
+        recent_std = std_opinions[-10:]
+        mean_change = max(recent_mean) - min(recent_mean)
+        std_change = max(recent_std) - min(recent_std)
+        
+        converged = mean_change < 0.01 and std_change < 0.01
+        
+        return {
+            'initial_mean': mean_opinions[0],
+            'final_mean': mean_opinions[-1],
+            'initial_std': std_opinions[0],
+            'final_std': std_opinions[-1],
+            'mean_change_last_10': mean_change,
+            'std_change_last_10': std_change,
+            'converged': converged,
+            'convergence_timestep': len(mean_opinions) if converged else None
+        }
+    
+    return {'error': 'Not enough timesteps for convergence analysis'}
+
+
+def compare_topics(all_results: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Compare results across all topics.
+    
+    Args:
+        all_results: Results for all topics
+        
+    Returns:
+        Topic comparison summary
+    """
+    comparison = {
+        'topics_analyzed': len(all_results),
+        'converged_topics': 0,
+        'failed_topics': 0,
+        'topic_analyses': {}
     }
+    
+    for topic, results in all_results.items():
+        analysis = analyze_topic_convergence(results)
+        comparison['topic_analyses'][topic] = analysis
+        
+        if 'error' in analysis:
+            comparison['failed_topics'] += 1
+        elif analysis.get('converged', False):
+            comparison['converged_topics'] += 1
+    
+    return comparison
 
 
 def main():
@@ -160,16 +241,55 @@ def main():
     print("OPINION DYNAMICS SIMULATION")
     print("=" * 50)
     
-    results = run_simulation(config, topic=args.topic, random_seed=args.seed)
-    
-    print("\n" + "=" * 50)
-    print("SIMULATION COMPLETED")
-    print("=" * 50)
-    print(f"Topic: {results['topic']}")
-    print(f"Agents: {results['simulation_params']['n_agents']}")
-    print(f"Timesteps: {results['simulation_params']['num_timesteps']}")
-    print(f"Random seed: {results['random_seed']}")
-    print(f"Final average opinion: {sum(results['final_opinions']) / len(results['final_opinions']):.3f}")
+    if args.topic is not None:
+        # Run single topic simulation
+        results = run_simulation(config, args.topic, random_seed=args.seed)
+        
+        print("\n" + "=" * 50)
+        print("SINGLE TOPIC SIMULATION COMPLETED")
+        print("=" * 50)
+        print(f"Topic: {results['topic']}")
+        print(f"Agents: {results['simulation_params']['n_agents']}")
+        print(f"Timesteps: {results['simulation_params']['num_timesteps']}")
+        print(f"Random seed: {results['random_seed']}")
+        
+        # Analyze convergence
+        analysis = analyze_topic_convergence(results)
+        if 'error' not in analysis:
+            print(f"\nConvergence Analysis:")
+            print(f"  Initial mean opinion: {analysis['initial_mean']:.3f}")
+            print(f"  Final mean opinion: {analysis['final_mean']:.3f}")
+            print(f"  Initial std dev: {analysis['initial_std']:.3f}")
+            print(f"  Final std dev: {analysis['final_std']:.3f}")
+            print(f"  Mean change in last 10 timesteps: {analysis['mean_change_last_10']:.3f}")
+            print(f"  Std dev change in last 10 timesteps: {analysis['std_change_last_10']:.3f}")
+            print(f"  Converged: {'Yes' if analysis['converged'] else 'No'}")
+        
+    else:
+        # Run all topics
+        all_results = run_all_topics(config, random_seed=args.seed)
+        
+        print("\n" + "=" * 50)
+        print("ALL TOPICS SIMULATION COMPLETED")
+        print("=" * 50)
+        
+        # Compare topics
+        comparison = compare_topics(all_results)
+        
+        print(f"Topics analyzed: {comparison['topics_analyzed']}")
+        print(f"Topics converged: {comparison['converged_topics']}")
+        print(f"Topics failed: {comparison['failed_topics']}")
+        
+        print("\nDetailed Topic Analysis:")
+        print("-" * 30)
+        for topic, analysis in comparison['topic_analyses'].items():
+            print(f"\nTopic: {topic}")
+            if 'error' in analysis:
+                print(f"  Error: {analysis['error']}")
+            else:
+                print(f"  Initial mean: {analysis['initial_mean']:.3f}")
+                print(f"  Final mean: {analysis['final_mean']:.3f}")
+                print(f"  Converged: {'Yes' if analysis['converged'] else 'No'}")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,6 @@ Network graph model for managing the social network structure.
 import numpy as np
 import networkx as nx
 from typing import List, Dict, Any, Tuple, Optional
-from ..llm.agent import LLMAgent
 
 
 class NetworkModel:
@@ -31,7 +30,6 @@ class NetworkModel:
             np.random.seed(random_seed)
             
         self.adjacency_matrix = self._initialize_adjacency_matrix()
-        self.agents: List[LLMAgent] = []
         self.network_history = []
     
     def _initialize_adjacency_matrix(self) -> np.ndarray:
@@ -51,17 +49,7 @@ class NetworkModel:
         
         return A
     
-    def add_agents(self, agents: List[LLMAgent]):
-        """
-        Add agents to the network.
-        
-        Args:
-            agents: List of LLM agents
-        """
-        if len(agents) != self.n_agents:
-            raise ValueError(f"Expected {self.n_agents} agents, got {len(agents)}")
-        
-        self.agents = agents
+
     
     def get_adjacency_matrix(self) -> np.ndarray:
         """
@@ -127,36 +115,7 @@ class NetworkModel:
         components = list(nx.connected_components(G))
         return [list(comp) for comp in components]
     
-    def get_echo_chambers(self, similarity_threshold: float = 0.8) -> List[List[int]]:
-        """
-        Detect echo chambers based on opinion similarity.
-        
-        Args:
-            similarity_threshold: Minimum similarity for echo chamber detection
-            
-        Returns:
-            List of echo chambers (each chamber is a list of agent IDs)
-        """
-        if not self.agents:
-            return []
-        
-        # Create similarity graph
-        similarity_matrix = np.zeros((self.n_agents, self.n_agents))
-        
-        for i in range(self.n_agents):
-            for j in range(i + 1, self.n_agents):
-                similarity = self.agents[i].get_similarity_to(self.agents[j])
-                similarity_matrix[i, j] = similarity
-                similarity_matrix[j, i] = similarity
-        
-        # Create graph where edges exist if both connected and similar
-        echo_chamber_graph = (self.adjacency_matrix > 0) & (similarity_matrix > similarity_threshold)
-        
-        # Find connected components in this graph
-        G = nx.from_numpy_array(echo_chamber_graph.astype(int))
-        components = list(nx.connected_components(G))
-        
-        return [list(comp) for comp in components if len(comp) > 1]
+
     
     def get_agent_degrees(self) -> Dict[int, int]:
         """
@@ -168,43 +127,7 @@ class NetworkModel:
         degrees = np.sum(self.adjacency_matrix, axis=1)
         return {i: int(degrees[i]) for i in range(self.n_agents)}
     
-    def get_network_evolution_metrics(self) -> Dict[str, List[float]]:
-        """
-        Get network evolution metrics over time.
-        
-        Returns:
-            Dictionary containing lists of metrics over time
-        """
-        metrics = {
-            'density': [],
-            'average_degree': [],
-            'clustering_coefficient': [],
-            'num_components': []
-        }
-        
-        for adj_matrix in self.network_history + [self.adjacency_matrix]:
-            # Calculate density
-            total_edges = np.sum(adj_matrix) / 2
-            max_possible_edges = self.n_agents * (self.n_agents - 1) / 2
-            density = total_edges / max_possible_edges
-            metrics['density'].append(density)
-            
-            # Calculate average degree
-            degrees = np.sum(adj_matrix, axis=1)
-            avg_degree = np.mean(degrees)
-            metrics['average_degree'].append(avg_degree)
-            
-            # Calculate clustering coefficient
-            G = nx.from_numpy_array(adj_matrix)
-            clustering = nx.average_clustering(G)
-            metrics['clustering_coefficient'].append(clustering)
-            
-            # Calculate number of components
-            G = nx.from_numpy_array(adj_matrix)
-            num_components = nx.number_connected_components(G)
-            metrics['num_components'].append(num_components)
-        
-        return metrics
+
     
     def to_networkx(self) -> nx.Graph:
         """
@@ -214,13 +137,6 @@ class NetworkModel:
             NetworkX graph object
         """
         G = nx.from_numpy_array(self.adjacency_matrix)
-        
-        # Add agent attributes
-        for i, agent in enumerate(self.agents):
-            G.nodes[i]['agent_id'] = agent.agent_id
-            G.nodes[i]['opinions'] = agent.get_opinions().tolist()
-            G.nodes[i]['degree'] = agent.get_degree(self.adjacency_matrix)
-        
         return G
     
     def to_dict(self) -> Dict[str, Any]:
@@ -234,8 +150,7 @@ class NetworkModel:
             'n_agents': self.n_agents,
             'initial_connection_probability': self.initial_connection_probability,
             'adjacency_matrix': self.adjacency_matrix.tolist(),
-            'network_history': [adj.tolist() for adj in self.network_history],
-            'agents': [agent.to_dict() for agent in self.agents]
+            'network_history': [adj.tolist() for adj in self.network_history]
         }
     
     @classmethod
@@ -255,5 +170,4 @@ class NetworkModel:
         )
         network.adjacency_matrix = np.array(data['adjacency_matrix'])
         network.network_history = [np.array(adj) for adj in data['network_history']]
-        network.agents = [LLMAgent.from_dict(agent_data) for agent_data in data['agents']]
         return network 
