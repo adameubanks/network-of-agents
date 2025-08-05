@@ -7,12 +7,14 @@ import os
 import argparse
 from typing import Dict, Any, Optional, List
 import time
+from datetime import datetime
 
 from dotenv import load_dotenv
 load_dotenv()
 
 from network_of_agents.simulation.controller import Controller
 from network_of_agents.llm_client import LLMClient
+from network_of_agents.visualization import plot_opinion_evolution, save_simulation_data, print_simulation_summary
 
 
 def load_config(config_path: str = "config.json") -> Dict[str, Any]:
@@ -46,10 +48,19 @@ def create_llm_client(config: Dict[str, Any]) -> LLMClient:
     if not api_key:
         raise ValueError(f"No API key found in environment variable {api_key_env}")
     
+    # Get model configuration
+    model_name = llm_config.get('model_name', 'gpt-4o-mini')
+    
     # Get batch configuration
     batch_config = llm_config.get('batch', {})
     
-    return LLMClient(api_key=api_key, batch_config=batch_config)
+    # Get temperature configuration
+    generation_temperature = llm_config.get('generation_temperature', 0.9)
+    rating_temperature = llm_config.get('rating_temperature', 0.1)
+    
+    return LLMClient(api_key=api_key, model_name=model_name, batch_config=batch_config, 
+                    generation_temperature=generation_temperature, 
+                    rating_temperature=rating_temperature)
 
 
 def run_simulation(config: Dict[str, Any], topic: str, 
@@ -67,10 +78,15 @@ def run_simulation(config: Dict[str, Any], topic: str,
     """
     # Extract parameters
     sim_config = config['simulation']
+    llm_config = config.get('llm', {})
     
     # Use provided seed or default from config
     if random_seed is None:
         random_seed = sim_config.get('random_seed')
+    
+    # Get temperature settings
+    generation_temperature = llm_config.get('generation_temperature', 0.9)
+    rating_temperature = llm_config.get('rating_temperature', 0.1)
     
     # Create LLM client
     llm_client = create_llm_client(config)
@@ -84,11 +100,14 @@ def run_simulation(config: Dict[str, Any], topic: str,
         initial_connection_probability=sim_config['initial_connection_probability'],
         llm_client=llm_client,
         topics=[topic],  # Single topic only
-        random_seed=random_seed
+        random_seed=random_seed,
+        generation_temperature=generation_temperature,
+        rating_temperature=rating_temperature
     )
     
     # Run simulation
     print(f"Starting simulation for topic: {topic}")
+    print(f"Initial opinions: {[agent.get_opinion() for agent in controller.agents]}")
     start_time = time.time()
     results = controller.run_simulation(progress_bar=True)
     end_time = time.time()
@@ -101,6 +120,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
     final_std = (sum((x - final_avg) ** 2 for x in final_opinions) / len(final_opinions)) ** 0.5
     print(f"Final average opinion for '{topic}': {final_avg:.3f}")
     print(f"Final opinion std dev for '{topic}': {final_std:.3f}")
+    print(f"Final opinions: {[f'{op:.3f}' for op in final_opinions]}")
     
     # Add topic to results
     results['topic'] = topic
@@ -108,9 +128,9 @@ def run_simulation(config: Dict[str, Any], topic: str,
     return results
 
 
-def run_all_topics(config: Dict[str, Any], random_seed: Optional[int] = None) -> Dict[str, Any]:
+def run_simulations_iteratively(config: Dict[str, Any], random_seed: Optional[int] = None) -> Dict[str, Any]:
     """
-    Run simulations for all topics separately.
+    Run simulations for all topics iteratively.
     
     Args:
         config: Configuration dictionary
@@ -130,12 +150,8 @@ def run_all_topics(config: Dict[str, Any], random_seed: Optional[int] = None) ->
         print(f"\nTopic {i+1}/{len(topics)}: {topic}")
         print("-" * 30)
         
-        try:
-            results = run_simulation(config, topic, random_seed)
-            all_results[topic] = results
-        except Exception as e:
-            print(f"Error simulating topic '{topic}': {e}")
-            all_results[topic] = {'error': str(e)}
+        results = run_simulation(config, topic, random_seed)
+        all_results[topic] = results
     
     return all_results
 
@@ -208,15 +224,44 @@ def compare_topics(all_results: Dict[str, Any]) -> Dict[str, Any]:
     return comparison
 
 
+def generate_default_filenames(topic: str) -> tuple:
+    """
+    Generate default filenames for saving results.
+    
+    Args:
+        topic: Topic name
+        
+    Returns:
+        Tuple of (data_filename, plot_filename)
+    """
+    # Create results directory if it doesn't exist
+    os.makedirs('results', exist_ok=True)
+    
+    # Generate timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create safe topic name for filename
+    topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
+    
+    data_filename = f"results/{topic_safe}_{timestamp}.json"
+    plot_filename = f"results/{topic_safe}_{timestamp}.png"
+    
+    return data_filename, plot_filename
+
+
 def main():
     """Main function with command-line interface."""
     parser = argparse.ArgumentParser(description='Run opinion dynamics simulation')
     parser.add_argument('--config', type=str, default='config.json', 
                        help='Configuration file path')
-    parser.add_argument('--topic', type=str, help='Topic to simulate (overrides config)')
+    parser.add_argument('--topic', type=str, help='Topic to simulate (if not provided, runs all topics from config)')
     parser.add_argument('--seed', type=int, help='Random seed (overrides config)')
     parser.add_argument('--agents', type=int, help='Number of agents (overrides config)')
     parser.add_argument('--timesteps', type=int, help='Number of timesteps (overrides config)')
+    parser.add_argument('--save-data', type=str, help='Path to save simulation data (JSON)')
+    parser.add_argument('--save-plot', type=str, help='Path to save opinion evolution plot (PNG)')
+    parser.add_argument('--no-plot', action='store_true', help='Disable interactive plotting')
+    parser.add_argument('--no-save', action='store_true', help='Disable automatic saving to results folder')
     
     args = parser.parse_args()
     
@@ -246,7 +291,7 @@ def main():
         results = run_simulation(config, args.topic, random_seed=args.seed)
         
         print("\n" + "=" * 50)
-        print("SINGLE TOPIC SIMULATION COMPLETED")
+        print("SIMULATION COMPLETED")
         print("=" * 50)
         print(f"Topic: {results['topic']}")
         print(f"Agents: {results['simulation_params']['n_agents']}")
@@ -265,9 +310,35 @@ def main():
             print(f"  Std dev change in last 10 timesteps: {analysis['std_change_last_10']:.3f}")
             print(f"  Converged: {'Yes' if analysis['converged'] else 'No'}")
         
+        # Print detailed summary
+        print_simulation_summary(results)
+        
+        # Determine save paths
+        if args.save_data:
+            data_path = args.save_data
+        elif not args.no_save:
+            data_path, _ = generate_default_filenames(results['topic'])
+        else:
+            data_path = None
+            
+        if args.save_plot:
+            plot_path = args.save_plot
+        elif not args.no_save:
+            _, plot_path = generate_default_filenames(results['topic'])
+        else:
+            plot_path = None
+        
+        # Save data if requested
+        if data_path:
+            save_simulation_data(results, data_path)
+        
+        # Generate and save plot if requested
+        if not args.no_plot:
+            plot_opinion_evolution(results, save_path=plot_path)
+        
     else:
-        # Run all topics
-        all_results = run_all_topics(config, random_seed=args.seed)
+        # Run all topics iteratively
+        all_results = run_simulations_iteratively(config, random_seed=args.seed)
         
         print("\n" + "=" * 50)
         print("ALL TOPICS SIMULATION COMPLETED")
@@ -290,6 +361,28 @@ def main():
                 print(f"  Initial mean: {analysis['initial_mean']:.3f}")
                 print(f"  Final mean: {analysis['final_mean']:.3f}")
                 print(f"  Converged: {'Yes' if analysis['converged'] else 'No'}")
+        
+        # Save data and generate plots for each topic
+        if not args.no_save:
+            for topic, results in all_results.items():
+                if 'error' not in results:
+                    data_path, plot_path = generate_default_filenames(topic)
+                    save_simulation_data(results, data_path)
+                    
+                    if not args.no_plot:
+                        plot_opinion_evolution(results, save_path=plot_path)
+        elif args.save_data or args.save_plot:
+            for topic, results in all_results.items():
+                if 'error' not in results:
+                    topic_safe = topic.replace(' ', '_').replace('/', '_')
+                    
+                    if args.save_data:
+                        data_path = args.save_data.replace('.json', f'_{topic_safe}.json')
+                        save_simulation_data(results, data_path)
+                    
+                    if args.save_plot and not args.no_plot:
+                        plot_path = args.save_plot.replace('.png', f'_{topic_safe}.png')
+                        plot_opinion_evolution(results, save_path=plot_path)
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ ENV/
 Thumbs.db
 
 # Project specific
-simulation_results/
+results/
 *.png
 *.jpg
 *.jpeg

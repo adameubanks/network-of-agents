@@ -3,26 +3,22 @@
     "n_agents": 10,
     "epsilon": 0.001,
     "theta": 7,
-    "num_timesteps": 50,
+    "num_timesteps": 10,
     "initial_connection_probability": 0.2,
-    "random_seed": null
+    "random_seed": 42
   },
   "llm": {
     "api_key_env": "OPENAI_API_KEY",
+    "model_name": "gpt-4o",
+    "generation_temperature": 0.9,
+    "rating_temperature": 0.1,
     "batch": {
       "max_workers": 50,
-      "timeout": 600,
-      "enable_fallback": true
+      "timeout": 600
     }
   },
   "topics": [
-    "gay rights",
-    "queer identity",
-    "transgender rights",
-    "climate change",
-    "republicans",
-    "democrats",
-    "donald trump",
-    "joe biden"
+    "gay people",
+    "queer people"
   ]
 } 

@@ -15,201 +15,110 @@ class LLMClient:
     Streamlined client for LLM-based post generation and interpretation.
     """
     
-    def __init__(self, api_key: Optional[str] = None, batch_config: Optional[Dict] = None):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gpt-4o-mini", 
+                 batch_config: Optional[Dict] = None, generation_temperature: float = 0.9, 
+                 rating_temperature: float = 0.1):
         """
-        Initialize the LLM client.
+        Initialize LLM client.
         
         Args:
-            api_key: API key for the LLM provider (if not provided, will use environment variable)
-            batch_config: Configuration for batch processing
+            api_key: OpenAI API key
+            model_name: Name of the LLM model to use
+            batch_config: Batch processing configuration
+            generation_temperature: Sampling temperature for post generation (default: 0.9)
+            rating_temperature: Sampling temperature for opinion rating (default: 0.1)
         """
-        self.model_name = "gpt-4o-mini"  # Hardcoded model
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        
+        self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
-            raise ValueError("API key must be provided or set in environment variables")
+            raise ValueError("No API key provided or found in environment")
         
-        # Set the API key for LiteLLM
-        litellm.api_key = self.api_key
+        # Set up litellm
+        litellm.set_verbose = False
+        os.environ["OPENAI_API_KEY"] = self.api_key
         
-        # Set batch configuration
-        self.batch_config = batch_config or {}
-        self.max_workers = self.batch_config.get('max_workers', 50)
-        self.timeout = self.batch_config.get('timeout', 600)
-        self.enable_fallback = self.batch_config.get('enable_fallback', True)
+        # Model configuration
+        self.model_name = model_name
+        
+        # Temperature configuration - these should be set from config.json
+        self.generation_temperature = generation_temperature
+        self.rating_temperature = rating_temperature
+        
+        # Batch processing configuration
+        self.max_workers = batch_config.get('max_workers', 50) if batch_config else 50
+        self.timeout = batch_config.get('timeout', 600) if batch_config else 600
     
-    def generate_post(self, topic: str, agent_id: int) -> str:
+    def generate_posts_for_agents(self, topic: str, agents: List) -> List[str]:
         """
-        Generate a post about the given topic.
-        
-        Args:
-            topic: Topic to generate post about
-            agent_id: ID of the agent generating the post
-            
-        Returns:
-            Generated post text (1-2 sentences)
-        """
-        prompt = f"""
-Generate a 1-2 sentence social media post about {topic}.
-The post should be natural and conversational, like something you'd see on social media.
-Keep it under 200 characters.
-"""
-        
-        response = self._generate_text(prompt, max_tokens=100, temperature=0.7)
-        return response.strip()
-    
-    def generate_posts_batch(self, topic: str, agent_ids: List[int]) -> List[str]:
-        """
-        Generate posts for multiple agents in batch.
+        Generate posts for multiple agents using their specific personalities.
         
         Args:
             topic: Topic to generate posts about
-            agent_ids: List of agent IDs to generate posts for
+            agents: List of agent objects with personalities
             
         Returns:
             List of generated post texts
         """
-        messages = []
-        for agent_id in agent_ids:
-            prompt = f"""
-Generate a 1-2 sentence social media post about {topic}.
-The post should be natural and conversational, like something you'd see on social media.
-Keep it under 200 characters.
-"""
-            messages.append([{"role": "user", "content": prompt}])
+        prompts = []
+        for agent in agents:
+            prompt = agent.generate_post_prompt(topic)
+            prompts.append(prompt)
         
-        try:
-            responses = litellm.batch_completion(
-                model=self.model_name,
-                messages=messages,
-                max_tokens=100,
-                temperature=0.7,
-                max_workers=min(len(messages), self.max_workers),
-                timeout=self.timeout
-            )
-            
-            posts = []
-            for response in responses:
-                if hasattr(response, 'choices') and len(response.choices) > 0:
-                    posts.append(response.choices[0].message.content.strip())
-                else:
-                    # Fallback for failed responses
-                    posts.append(f"Default post about {topic}")
-            
-            return posts
-            
-        except Exception as e:
-            # Fallback to sequential processing
-            if self.enable_fallback:
-                print(f"Batch generation failed, falling back to sequential: {e}")
-                return [self.generate_post(topic, agent_id) for agent_id in agent_ids]
-            else:
-                raise e
+        responses = self._call_llm(prompts, max_tokens=100, temperature=self.generation_temperature)
+        return [response.strip() for response in responses]
     
-    def interpret_single_post(self, post: str, topic: str) -> float:
+    def interpret_posts_for_agents(self, posts: List[str], topic: str, agents: List) -> List[List[float]]:
         """
-        Interpret a single post to extract opinion value for the given topic.
-        
-        Args:
-            post: Post to analyze
-            topic: Topic to extract opinion for
-            
-        Returns:
-            Opinion value (0-1) for the post
-        """
-        prompt = f"""
-Analyze the following post about {topic} and provide an opinion value.
-Provide a single number between 0 and 1:
-0 = strongly oppose/disagree
-1 = strongly support/agree
-
-Post: "{post}"
-
-IMPORTANT: Respond with ONLY a single number between 0 and 1.
-Do not include any explanations, text, or other content.
-Example format: 0.8
-"""
-        
-        response = self._generate_text(prompt, max_tokens=50, temperature=0.3)
-        return self._parse_single_opinion_response(response)
-    
-    def interpret_posts_batch(self, posts: List[str], topic: str) -> List[float]:
-        """
-        Interpret multiple posts in batch to extract opinion values.
+        Interpret posts using agent-specific personalities with individual calls.
         
         Args:
             posts: List of posts to analyze
             topic: Topic to extract opinions for
+            agents: List of agent objects with personalities
             
         Returns:
-            List of opinion values (0-1) for each post
+            List of opinion values (0-1) for each agent's interpretation
         """
-        messages = []
-        for post in posts:
-            prompt = f"""
-Analyze the following post about {topic} and provide an opinion value.
-Provide a single number between 0 and 1:
-0 = strongly oppose/disagree
-1 = strongly support/agree
-
-Post: "{post}"
-
-IMPORTANT: Respond with ONLY a single number between 0 and 1.
-Do not include any explanations, text, or other content.
-Example format: 0.8
-"""
-            messages.append([{"role": "user", "content": prompt}])
+        all_interpretations = []
         
-        try:
-            responses = litellm.batch_completion(
-                model=self.model_name,
-                messages=messages,
-                max_tokens=50,
-                temperature=0.3,
-                max_workers=min(len(messages), self.max_workers),
-                timeout=self.timeout
-            )
-            
-            opinions = []
-            for response in responses:
-                if hasattr(response, 'choices') and len(response.choices) > 0:
-                    opinion = self._parse_single_opinion_response(response.choices[0].message.content)
-                    opinions.append(opinion)
-                else:
-                    # Fallback for failed responses
-                    import random
-                    opinions.append(random.random())
-            
-            return opinions
-            
-        except Exception as e:
-            # Fallback to sequential processing
-            if self.enable_fallback:
-                print(f"Batch interpretation failed, falling back to sequential: {e}")
-                return [self.interpret_single_post(post, topic) for post in posts]
-            else:
-                raise e
+        for agent in agents:
+            interpretations = []
+            for post in posts:
+                opinion = agent.interpret_single_post(self, post, topic)
+                interpretations.append(opinion)
+            all_interpretations.append(interpretations)
+        
+        return all_interpretations
     
-    def interpret_posts(self, posts: List[str], topic: str) -> List[float]:
+    def interpret_single_post(self, agent, post: str, topic: str) -> float:
         """
-        Interpret posts to extract opinion values for the given topic.
+        Interpret a single post using agent-specific personality.
         
         Args:
-            posts: List of posts to analyze
-            topic: Topic to extract opinions for
+            agent: Agent object with personality
+            post: Single post to interpret
+            topic: Topic the post is about
             
         Returns:
-            List of opinion values (0-1) for each post
+            Single opinion value (0-1)
         """
-        opinions = []
-        for post in posts:
-            opinion = self.interpret_single_post(post, topic)
-            opinions.append(opinion)
-        return opinions
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                prompt = agent.interpret_single_post_prompt(post, topic)
+                response = self._generate_single_text(prompt, max_tokens=20)
+                opinion = self._parse_opinion_response(response)
+                return opinion
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    print(f"Warning: Failed to interpret post after {max_retries} attempts. Using fallback value 0.5. Error: {e}")
+                    return 0.5  # Fallback to neutral opinion
+                else:
+                    print(f"Attempt {attempt + 1} failed, retrying... Error: {e}")
+                    continue
     
-    def _generate_text(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7) -> str:
+    def _generate_single_text(self, prompt: str, max_tokens: int = 1000, temperature: float = None) -> str:
         """
-        Generate text using the LLM.
+        Generate single text using the LLM.
         
         Args:
             prompt: Input prompt
@@ -230,7 +139,73 @@ Example format: 0.8
         except Exception as e:
             raise Exception(f"LLM generation failed: {e}")
     
-    def _parse_single_opinion_response(self, response: str) -> float:
+    def _parse_multiple_opinion_response(self, response: str, expected_count: int) -> List[float]:
+        """
+        DEPRECATED: Parse the LLM response to extract multiple opinion values.
+        This method is deprecated in favor of individual opinion calls.
+        
+        Args:
+            response: LLM response text
+            expected_count: Expected number of opinion values
+            
+        Returns:
+            List of opinion values
+        """
+        # Clean the response
+        response = response.strip()
+        response = response.replace('\n', ' ').replace('  ', ' ')
+        
+        # Extract numbers
+        import re
+        numbers = re.findall(r'0\.\d+|1\.0|0|1', response)
+        
+        # Handle cases where we don't get exactly the expected number
+        if len(numbers) < expected_count:
+            raise ValueError(f"Expected {expected_count} numbers, got {len(numbers)}")
+        elif len(numbers) > expected_count:
+            print(f"Warning: Expected {expected_count} numbers, got {len(numbers)}. Truncating.")
+            numbers = numbers[:expected_count]
+        
+        opinions = [float(num) for num in numbers]
+        
+        # Ensure values are in [0, 1] range
+        opinions = [max(0.0, min(1.0, op)) for op in opinions]
+        
+        return opinions
+    
+    def _call_llm(self, prompts: List[str], max_tokens: int = 1000, temperature: float = None) -> List[str]:
+        """
+        Call LLM with batch processing.
+        
+        Args:
+            prompts: List of prompts to send
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature
+            
+        Returns:
+            List of generated responses
+        """
+        messages = [[{"role": "user", "content": prompt}] for prompt in prompts]
+        
+        responses = litellm.batch_completion(
+            model=self.model_name,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            max_workers=min(len(messages), self.max_workers),
+            timeout=self.timeout
+        )
+        
+        results = []
+        for response in responses:
+            if hasattr(response, 'choices') and len(response.choices) > 0:
+                results.append(response.choices[0].message.content)
+            else:
+                raise Exception("LLM response missing choices")
+        
+        return results
+    
+    def _parse_opinion_response(self, response: str) -> float:
         """
         Parse the LLM response to extract a single opinion value.
         
@@ -240,61 +215,32 @@ Example format: 0.8
         Returns:
             Opinion value (0-1)
         """
-        try:
-            # Clean the response
-            response = response.strip()
-            response = response.replace('\n', '').replace(' ', '')
-            
-            # Extract number
-            import re
-            numbers = re.findall(r'0\.\d+|1\.0|0|1', response)
-            
-            if len(numbers) == 0:
-                raise ValueError("No number found in response")
-            
-            opinion = float(numbers[0])
-            
-            # Ensure value is in [0, 1] range
-            opinion = max(0.0, min(1.0, opinion))
-            
-            return opinion
-            
-        except Exception as e:
-            # If parsing fails, return random value
-            import random
-            return random.random()
-    
-    def _parse_opinion_response(self, response: str, expected_count: int) -> List[float]:
-        """
-        Parse the LLM response to extract opinion values.
+        # Clean the response
+        response = response.strip()
+        response = response.replace('\n', '').replace(' ', '')
         
-        Args:
-            response: LLM response text
-            expected_count: Expected number of opinion values
-            
-        Returns:
-            List of opinion values
-        """
-        try:
-            # Clean the response
-            response = response.strip()
-            response = response.replace('\n', '').replace(' ', '')
-            
-            # Extract numbers
-            import re
-            numbers = re.findall(r'0\.\d+|1\.0|0|1', response)
-            
-            if len(numbers) != expected_count:
-                raise ValueError(f"Expected {expected_count} numbers, got {len(numbers)}")
-            
-            opinions = [float(num) for num in numbers]
-            
-            # Ensure values are in [0, 1] range
-            opinions = [max(0.0, min(1.0, op)) for op in opinions]
-            
-            return opinions
-            
-        except Exception as e:
-            # If parsing fails, return random values
-            import random
-            return [random.random() for _ in range(expected_count)] 
+        # Extract number
+        import re
+        numbers = re.findall(r'0\.\d+|1\.0|0|1', response)
+        
+        if len(numbers) == 0:
+            # Try a more flexible pattern
+            numbers = re.findall(r'\d+\.?\d*', response)
+            if len(numbers) == 0:
+                raise ValueError(f"No number found in response: '{response}'")
+            else:
+                # Convert to float and normalize to [0,1]
+                try:
+                    value = float(numbers[0])
+                    if value > 1:
+                        value = value / 100  # Assume it's a percentage
+                    return max(0.0, min(1.0, value))
+                except ValueError:
+                    raise ValueError(f"Could not parse number from response: '{response}'")
+        
+        opinion = float(numbers[0])
+        
+        # Ensure value is in [0, 1] range
+        opinion = max(0.0, min(1.0, opinion))
+        
+        return opinion 

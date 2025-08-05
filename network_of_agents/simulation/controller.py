@@ -26,7 +26,9 @@ class Controller:
                  num_timesteps: int = 50,
                  initial_connection_probability: float = 0.2,
                  topics: Optional[List[str]] = None,
-                 random_seed: Optional[int] = None):
+                 random_seed: Optional[int] = None,
+                 generation_temperature: float = 0.9,
+                 rating_temperature: float = 0.1):
         """
         Initialize simulation controller.
         
@@ -39,6 +41,8 @@ class Controller:
             llm_client: LLM client for post generation and interpretation
             topics: List of topics for opinions
             random_seed: Random seed for reproducible results
+            generation_temperature: Temperature for post generation (default: 0.9)
+            rating_temperature: Temperature for opinion rating (default: 0.1)
         """
         # Set random seed if provided
         if random_seed is not None:
@@ -50,8 +54,14 @@ class Controller:
         self.num_timesteps = num_timesteps
         self.initial_connection_probability = initial_connection_probability
         self.llm_client = llm_client
-        self.topics = topics or ["Climate Change"]
+        self.topics = topics
         self.random_seed = random_seed
+        self.generation_temperature = generation_temperature
+        self.rating_temperature = rating_temperature
+        
+        # Update LLM client temperatures from config
+        self.llm_client.generation_temperature = generation_temperature
+        self.llm_client.rating_temperature = rating_temperature
         
         # Initialize components
         self.network = NetworkModel(n_agents, initial_connection_probability, random_seed)
@@ -65,25 +75,37 @@ class Controller:
         self.opinion_history = []
         self.mean_opinions = []
         self.std_opinions = []
+        self.posts_history = []
+        self.interpretations_history = []
     
     def _initialize_agents(self) -> List[Agent]:
         """
-        Initialize agents with diverse initial opinions.
+        Initialize agents with random opinions and balanced MBTI distribution.
         
         Returns:
             List of initialized agents
         """
         agents = []
         
-        # Create diverse initial opinions
+        # MBTI types for balanced distribution
+        mbti_types = [
+            "INTJ", "INTP", "ENTJ", "ENTP",
+            "INFJ", "INFP", "ENFJ", "ENFP", 
+            "ISTJ", "ISFJ", "ESTJ", "ESFJ",
+            "ISTP", "ISFP", "ESTP", "ESFP"
+        ]
+        
+        # Create agents with random opinions and balanced personality distribution
         for i in range(self.n_agents):
-            # Create clusters of opinions for diversity
-            cluster_id = i % 3  # 3 clusters
-            base_opinion = cluster_id / 2.0  # Spread across [0, 1]
-            noise = (np.random.random() - 0.5) * 0.3
-            initial_opinion = np.clip(base_opinion + noise, 0.0, 1.0)
+            # Create agent with random opinion
+            agent = Agent(agent_id=i)
             
-            agent = Agent(agent_id=i, initial_opinion=initial_opinion)
+            # Ensure balanced distribution by cycling through types
+            mbti_index = i % len(mbti_types)
+            
+            # Override the random assignment with balanced distribution
+            agent.personality["mbti_type"] = mbti_types[mbti_index]
+            
             agents.append(agent)
         
         return agents
@@ -102,7 +124,7 @@ class Controller:
         self.current_timestep = 0
         
         # Store initial state
-        self._store_current_state()
+        self._store_current_state([], [])
         
         # Main simulation loop
         iterator = tqdm(range(self.num_timesteps), desc="Running simulation") if progress_bar else range(self.num_timesteps)
@@ -110,36 +132,24 @@ class Controller:
         for timestep in iterator:
             self.current_timestep = timestep
             
-            # Step 1: Generate all posts in batch
+            # Step 1: Generate all posts using agent-specific prompting
             current_topic = self.topics[0]  # Use single topic for entire simulation
-            agent_ids = [agent.agent_id for agent in self.agents]
-            posts = self.llm_client.generate_posts_batch(current_topic, agent_ids)
+            posts = self.llm_client.generate_posts_for_agents(current_topic, self.agents)
             
-            # Step 2: Interpret all posts in batch
-            if self.llm_client is not None:
-                # Create a list of all posts that need to be interpreted by each agent
-                all_interpretations = []
-                for agent in self.agents:
-                    # Each agent interprets all posts
-                    interpretations = self.llm_client.interpret_posts_batch(posts, current_topic)
-                    all_interpretations.append(interpretations)
-            else:
-                # Fallback: simple interpretation based on keywords
-                all_interpretations = []
-                for agent in self.agents:
-                    opinions = []
-                    for post in posts:
-                        if "strongly support" in post.lower():
-                            opinions.append(0.9)
-                        elif "support" in post.lower():
-                            opinions.append(0.7)
-                        elif "somewhat oppose" in post.lower():
-                            opinions.append(0.3)
-                        elif "strongly oppose" in post.lower():
-                            opinions.append(0.1)
-                        else:
-                            opinions.append(0.5)
-                    all_interpretations.append(opinions)
+            # Step 2: Interpret all posts using agent-specific prompting
+            # Each agent interprets all posts with their own personality
+            all_interpretations = self.llm_client.interpret_posts_for_agents(posts, current_topic, self.agents)
+            
+            # Debug: Print first few timesteps
+            if timestep < 3:
+                print(f"Timestep {timestep}:")
+                print(f"  Posts: {posts[:3]}...")
+                for i, interpretations in enumerate(all_interpretations):
+                    print(f"  Agent {i} interpretations: {[f'{x:.3f}' for x in interpretations[:3]]}...")
+                print(f"  Agent 0 personality: {self.agents[0].personality}")
+                print(f"  all_interpretations structure: {[len(interp) for interp in all_interpretations]}")
+                print(f"  Number of agents: {len(self.agents)}")
+                print(f"  Number of posts: {len(posts)}")
             
             # Step 3: Update opinions using mathematical framework
             X_current = self._get_opinion_matrix()
@@ -150,6 +160,14 @@ class Controller:
             X_interpreted = np.array([all_interpretations[i][i] for i in range(len(all_interpretations))])
             X_next = update_opinions(X_interpreted, A_current, self.epsilon)
             
+            # Debug: Print first few timesteps
+            if timestep < 3:
+                print(f"  Current opinions: {[f'{x:.3f}' for x in X_current[:3]]}...")
+                print(f"  Interpreted opinions: {[f'{x:.3f}' for x in X_interpreted[:3]]}...")
+                print(f"  Next opinions: {[f'{x:.3f}' for x in X_next[:3]]}...")
+                print(f"  Network density: {self.network.get_network_density():.3f}")
+                print()
+            
             # Step 4: Update agent opinions
             self._update_agent_opinions(X_next)
             
@@ -158,7 +176,7 @@ class Controller:
             self.network.update_adjacency_matrix(A_next)
             
             # Step 6: Store current state
-            self._store_current_state()
+            self._store_current_state(posts, all_interpretations)
         
         self.is_running = False
         
@@ -186,7 +204,7 @@ class Controller:
         for i, agent in enumerate(self.agents):
             agent.update_opinion(new_opinions[i])
     
-    def _store_current_state(self):
+    def _store_current_state(self, posts: List[str], interpretations: List[List[float]]):
         """Store current simulation state."""
         opinions = self._get_opinion_matrix()
         self.opinion_history.append(opinions.copy())
@@ -197,6 +215,17 @@ class Controller:
         
         self.mean_opinions.append(mean_opinion)
         self.std_opinions.append(std_opinion)
+        
+        # Only store posts and interpretations if they exist (not for initial state)
+        if posts:
+            self.posts_history.append(posts)
+        else:
+            self.posts_history.append([])
+            
+        if interpretations:
+            self.interpretations_history.append(interpretations)
+        else:
+            self.interpretations_history.append([])
     
     def _get_simulation_results(self) -> Dict[str, Any]:
         """
@@ -209,6 +238,8 @@ class Controller:
             'opinion_history': [op.tolist() for op in self.opinion_history],
             'mean_opinions': self.mean_opinions,
             'std_opinions': self.std_opinions,
+            'posts_history': self.posts_history,
+            'interpretations_history': self.interpretations_history,
             'final_opinions': self._get_opinion_matrix().tolist(),
             'final_adjacency': self.network.get_adjacency_matrix().tolist(),
             'simulation_params': {
