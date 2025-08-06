@@ -4,7 +4,6 @@ Streamlined main script for opinion dynamics simulation.
 
 import json
 import os
-import argparse
 from typing import Dict, Any, Optional, List
 import time
 from datetime import datetime
@@ -224,71 +223,62 @@ def compare_topics(all_results: Dict[str, Any]) -> Dict[str, Any]:
     return comparison
 
 
-def generate_default_filenames(topic: str) -> tuple:
+def generate_default_filenames(topic: str, config: Dict[str, Any]) -> tuple:
     """
     Generate default filenames for saving results.
     
     Args:
         topic: Topic name
+        config: Configuration dictionary
         
     Returns:
         Tuple of (data_filename, plot_filename)
     """
     # Create results directory if it doesn't exist
-    os.makedirs('results', exist_ok=True)
+    results_dir = config.get('output', {}).get('results_directory', 'results')
+    os.makedirs(results_dir, exist_ok=True)
     
     # Generate timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    # Extract key parameters for filename from config
+    n_agents = config['simulation']['n_agents']
+    num_timesteps = config['simulation']['num_timesteps']
+    model_name = config.get('llm', {}).get('model_name', 'unknown')
+    
     # Create safe topic name for filename
     topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
     
-    data_filename = f"results/{topic_safe}_{timestamp}.json"
-    plot_filename = f"results/{topic_safe}_{timestamp}.png"
+    # Generate descriptive filename
+    data_filename = f"{results_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{timestamp}.json"
+    plot_filename = f"{results_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{timestamp}.png"
     
     return data_filename, plot_filename
 
 
 def main():
-    """Main function with command-line interface."""
-    parser = argparse.ArgumentParser(description='Run opinion dynamics simulation')
-    parser.add_argument('--config', type=str, default='config.json', 
-                       help='Configuration file path')
-    parser.add_argument('--topic', type=str, help='Topic to simulate (if not provided, runs all topics from config)')
-    parser.add_argument('--seed', type=int, help='Random seed (overrides config)')
-    parser.add_argument('--agents', type=int, help='Number of agents (overrides config)')
-    parser.add_argument('--timesteps', type=int, help='Number of timesteps (overrides config)')
-    parser.add_argument('--save-data', type=str, help='Path to save simulation data (JSON)')
-    parser.add_argument('--save-plot', type=str, help='Path to save opinion evolution plot (PNG)')
-    parser.add_argument('--no-plot', action='store_true', help='Disable interactive plotting')
-    parser.add_argument('--no-save', action='store_true', help='Disable automatic saving to results folder')
-    
-    args = parser.parse_args()
-    
+    """Main function with configuration-driven interface."""
     # Load configuration
     try:
-        config = load_config(args.config)
+        config = load_config('config.json')
     except FileNotFoundError:
-        print(f"Error: Configuration file '{args.config}' not found")
+        print(f"Error: Configuration file 'config.json' not found")
         return
     except json.JSONDecodeError as e:
         print(f"Error: Invalid JSON in configuration file: {e}")
         return
-    
-    # Override config with command-line arguments
-    if args.agents is not None:
-        config['simulation']['n_agents'] = args.agents
-    if args.timesteps is not None:
-        config['simulation']['num_timesteps'] = args.timesteps
     
     # Run simulation
     print("=" * 50)
     print("OPINION DYNAMICS SIMULATION")
     print("=" * 50)
     
-    if args.topic is not None:
+    # Check if single topic is specified in config
+    single_topic = config.get('single_topic')
+    
+    if single_topic is not None:
         # Run single topic simulation
-        results = run_simulation(config, args.topic, random_seed=args.seed)
+        results = run_simulation(config, single_topic, random_seed=None)
         
         print("\n" + "=" * 50)
         print("SIMULATION COMPLETED")
@@ -314,31 +304,17 @@ def main():
         print_simulation_summary(results)
         
         # Determine save paths
-        if args.save_data:
-            data_path = args.save_data
-        elif not args.no_save:
-            data_path, _ = generate_default_filenames(results['topic'])
-        else:
-            data_path = None
-            
-        if args.save_plot:
-            plot_path = args.save_plot
-        elif not args.no_save:
-            _, plot_path = generate_default_filenames(results['topic'])
-        else:
-            plot_path = None
+        data_path, plot_path = generate_default_filenames(results['topic'], config)
         
         # Save data if requested
-        if data_path:
-            save_simulation_data(results, data_path)
+        save_simulation_data(results, data_path, config)
         
         # Generate and save plot if requested
-        if not args.no_plot:
-            plot_opinion_evolution(results, save_path=plot_path)
+        plot_opinion_evolution(results, save_path=plot_path)
         
     else:
         # Run all topics iteratively
-        all_results = run_simulations_iteratively(config, random_seed=args.seed)
+        all_results = run_simulations_iteratively(config, random_seed=None)
         
         print("\n" + "=" * 50)
         print("ALL TOPICS SIMULATION COMPLETED")
@@ -363,26 +339,12 @@ def main():
                 print(f"  Converged: {'Yes' if analysis['converged'] else 'No'}")
         
         # Save data and generate plots for each topic
-        if not args.no_save:
-            for topic, results in all_results.items():
-                if 'error' not in results:
-                    data_path, plot_path = generate_default_filenames(topic)
-                    save_simulation_data(results, data_path)
-                    
-                    if not args.no_plot:
-                        plot_opinion_evolution(results, save_path=plot_path)
-        elif args.save_data or args.save_plot:
-            for topic, results in all_results.items():
-                if 'error' not in results:
-                    topic_safe = topic.replace(' ', '_').replace('/', '_')
-                    
-                    if args.save_data:
-                        data_path = args.save_data.replace('.json', f'_{topic_safe}.json')
-                        save_simulation_data(results, data_path)
-                    
-                    if args.save_plot and not args.no_plot:
-                        plot_path = args.save_plot.replace('.png', f'_{topic_safe}.png')
-                        plot_opinion_evolution(results, save_path=plot_path)
+        for topic, results in all_results.items():
+            if 'error' not in results:
+                data_path, plot_path = generate_default_filenames(topic, config)
+                save_simulation_data(results, data_path, config)
+                
+                plot_opinion_evolution(results, save_path=plot_path)
 
 
 if __name__ == "__main__":

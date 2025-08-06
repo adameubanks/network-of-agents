@@ -94,50 +94,7 @@ class NetworkModel:
         degrees = np.sum(self.adjacency_matrix, axis=1)
         return np.mean(degrees)
     
-    def get_clustering_coefficient(self) -> float:
-        """
-        Calculate the global clustering coefficient.
-        
-        Returns:
-            Global clustering coefficient
-        """
-        G = nx.from_numpy_array(self.adjacency_matrix)
-        return nx.average_clustering(G)
-    
-    def get_connected_components(self) -> List[List[int]]:
-        """
-        Find connected components in the network.
-        
-        Returns:
-            List of connected components (each component is a list of agent IDs)
-        """
-        G = nx.from_numpy_array(self.adjacency_matrix)
-        components = list(nx.connected_components(G))
-        return [list(comp) for comp in components]
-    
 
-    
-    def get_agent_degrees(self) -> Dict[int, int]:
-        """
-        Get the degree of each agent.
-        
-        Returns:
-            Dictionary mapping agent ID to degree
-        """
-        degrees = np.sum(self.adjacency_matrix, axis=1)
-        return {i: int(degrees[i]) for i in range(self.n_agents)}
-    
-
-    
-    def to_networkx(self) -> nx.Graph:
-        """
-        Convert to NetworkX graph for advanced analysis.
-        
-        Returns:
-            NetworkX graph object
-        """
-        G = nx.from_numpy_array(self.adjacency_matrix)
-        return G
     
     def to_dict(self) -> Dict[str, Any]:
         """

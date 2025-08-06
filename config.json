@@ -1,9 +1,9 @@
 {
   "simulation": {
-    "n_agents": 10,
+    "n_agents": 5,
     "epsilon": 0.001,
     "theta": 7,
-    "num_timesteps": 10,
+    "num_timesteps": 5,
     "initial_connection_probability": 0.2,
     "random_seed": 42
   },
@@ -11,14 +11,19 @@
     "api_key_env": "OPENAI_API_KEY",
     "model_name": "gpt-4o",
     "generation_temperature": 0.9,
-    "rating_temperature": 0.1,
+    "rating_temperature": 0.3,
     "batch": {
       "max_workers": 50,
       "timeout": 600
     }
   },
   "topics": [
-    "gay people",
-    "queer people"
-  ]
+    "donald trump"
+  ],
+  "output": {
+    "save_results": true,
+    "generate_plots": true,
+    "results_directory": "results",
+    "filename_pattern": "descriptive"
+  }
 } 

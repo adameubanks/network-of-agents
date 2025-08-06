@@ -63,12 +63,12 @@ class LLMClient:
             prompt = agent.generate_post_prompt(topic)
             prompts.append(prompt)
         
-        responses = self._call_llm(prompts, max_tokens=100, temperature=self.generation_temperature)
+        responses = self._call_llm(prompts, max_tokens=400, temperature=self.generation_temperature)
         return [response.strip() for response in responses]
     
-    def interpret_posts_for_agents(self, posts: List[str], topic: str, agents: List) -> List[List[float]]:
+    def interpret_posts_for_agents(self, posts: List[str], topic: str, agents: List) -> List[float]:
         """
-        Interpret posts using agent-specific personalities with individual calls.
+        Interpret own posts only (optimized to reduce API calls).
         
         Args:
             posts: List of posts to analyze
@@ -76,25 +76,22 @@ class LLMClient:
             agents: List of agent objects with personalities
             
         Returns:
-            List of opinion values (0-1) for each agent's interpretation
+            List of opinion values (-1 to 1) for each agent's self-interpretation
         """
-        all_interpretations = []
+        self_interpretations = []
         
-        for agent in agents:
-            interpretations = []
-            for post in posts:
-                opinion = agent.interpret_single_post(self, post, topic)
-                interpretations.append(opinion)
-            all_interpretations.append(interpretations)
+        for i, agent in enumerate(agents):
+            opinion = agent.interpret_single_post(self, posts[i], topic)
+            self_interpretations.append(opinion)
         
-        return all_interpretations
+        return self_interpretations
     
     def interpret_single_post(self, agent, post: str, topic: str) -> float:
         """
-        Interpret a single post using agent-specific personality.
+        Interpret a single post using agent-specific prompting.
         
         Args:
-            agent: Agent object with personality
+            agent: Agent object
             post: Single post to interpret
             topic: Topic the post is about
             
@@ -105,7 +102,7 @@ class LLMClient:
         for attempt in range(max_retries):
             try:
                 prompt = agent.interpret_single_post_prompt(post, topic)
-                response = self._generate_single_text(prompt, max_tokens=20)
+                response = self._generate_single_text(prompt, max_tokens=100)
                 opinion = self._parse_opinion_response(response)
                 return opinion
             except Exception as e:
@@ -123,7 +120,7 @@ class LLMClient:
         Args:
             prompt: Input prompt
             max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
+            temperature: Sampling temperature (uses default if None)
             
         Returns:
             Generated text
@@ -133,45 +130,13 @@ class LLMClient:
                 model=self.model_name,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens,
-                temperature=temperature
+                temperature=temperature if temperature is not None else 0.7
             )
             return response.choices[0].message.content
         except Exception as e:
             raise Exception(f"LLM generation failed: {e}")
     
-    def _parse_multiple_opinion_response(self, response: str, expected_count: int) -> List[float]:
-        """
-        DEPRECATED: Parse the LLM response to extract multiple opinion values.
-        This method is deprecated in favor of individual opinion calls.
-        
-        Args:
-            response: LLM response text
-            expected_count: Expected number of opinion values
-            
-        Returns:
-            List of opinion values
-        """
-        # Clean the response
-        response = response.strip()
-        response = response.replace('\n', ' ').replace('  ', ' ')
-        
-        # Extract numbers
-        import re
-        numbers = re.findall(r'0\.\d+|1\.0|0|1', response)
-        
-        # Handle cases where we don't get exactly the expected number
-        if len(numbers) < expected_count:
-            raise ValueError(f"Expected {expected_count} numbers, got {len(numbers)}")
-        elif len(numbers) > expected_count:
-            print(f"Warning: Expected {expected_count} numbers, got {len(numbers)}. Truncating.")
-            numbers = numbers[:expected_count]
-        
-        opinions = [float(num) for num in numbers]
-        
-        # Ensure values are in [0, 1] range
-        opinions = [max(0.0, min(1.0, op)) for op in opinions]
-        
-        return opinions
+
     
     def _call_llm(self, prompts: List[str], max_tokens: int = 1000, temperature: float = None) -> List[str]:
         """
@@ -213,34 +178,24 @@ class LLMClient:
             response: LLM response text
             
         Returns:
-            Opinion value (0-1)
+            Opinion value (-1 to 1)
         """
         # Clean the response
         response = response.strip()
         response = response.replace('\n', '').replace(' ', '')
         
-        # Extract number
+        # Extract number with improved regex to allow negative decimals and more granular values
         import re
-        numbers = re.findall(r'0\.\d+|1\.0|0|1', response)
+        # Updated pattern to match: -1.0, -0.234, 0.789, 1.0, etc.
+        numbers = re.findall(r'-?\d+\.?\d*', response)
         
         if len(numbers) == 0:
-            # Try a more flexible pattern
-            numbers = re.findall(r'\d+\.?\d*', response)
-            if len(numbers) == 0:
-                raise ValueError(f"No number found in response: '{response}'")
-            else:
-                # Convert to float and normalize to [0,1]
-                try:
-                    value = float(numbers[0])
-                    if value > 1:
-                        value = value / 100  # Assume it's a percentage
-                    return max(0.0, min(1.0, value))
-                except ValueError:
-                    raise ValueError(f"Could not parse number from response: '{response}'")
+            raise ValueError(f"No number found in response: '{response}'")
         
-        opinion = float(numbers[0])
-        
-        # Ensure value is in [0, 1] range
-        opinion = max(0.0, min(1.0, opinion))
-        
-        return opinion 
+        try:
+            opinion = float(numbers[0])
+            # Ensure value is in [-1, 1] range
+            opinion = max(-1.0, min(1.0, opinion))
+            return opinion
+        except ValueError:
+            raise ValueError(f"Could not parse number from response: '{response}'") 

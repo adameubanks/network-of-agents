@@ -37,13 +37,16 @@ def calculate_DN(M: np.ndarray, epsilon: float) -> np.ndarray:
     Returns:
         Row-normalized difference matrix
     """
-    num_rows = M.shape[0]
-    D_M = np.zeros((num_rows, num_rows))
+    # Vectorized computation using broadcasting
+    # Reshape for broadcasting: (n, 1, d) - (1, n, d) = (n, n, d)
+    M_expanded = M[:, np.newaxis, :]  # Shape: (n, 1, d)
+    M_broadcast = M[np.newaxis, :, :]  # Shape: (1, n, d)
     
-    for i in range(num_rows):
-        for j in range(num_rows):
-            if i != j:
-                D_M[i, j] = np.linalg.norm(M[i, :] - M[j, :], ord=1)
+    # Compute L1-norm differences using broadcasting
+    D_M = np.linalg.norm(M_expanded - M_broadcast, ord=1, axis=2)
+    
+    # Set diagonal to 0 (self-differences)
+    np.fill_diagonal(D_M, 0)
     
     return row_normalize(D_M, epsilon)
 
@@ -115,8 +118,8 @@ def update_opinions(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndar
     W_k = calculate_W(X_k, A_k, epsilon)
     X_next = np.dot(W_k, X_k)
     
-    # Ensure opinions stay within [0, 1] bounds
-    X_next = np.clip(X_next, 0.0, 1.0)
+    # Ensure opinions stay within [-1, 1] bounds
+    # X_next = np.clip(X_next, -1.0, 1.0)
     
     return X_next
 
@@ -157,42 +160,22 @@ def update_edges(A_k: np.ndarray, X_k: np.ndarray, theta: int, epsilon: float) -
     n = A_k.shape[0]
     S_hat_k = calculate_S_hat(X_k, theta, epsilon)
     
-    A_next = np.zeros((n, n))
+    # Vectorized edge update using broadcasting
+    # Generate random values for all pairs at once
+    gamma_matrix = np.random.rand(n, n)
     
-    for i in range(n):
-        for j in range(i + 1, n):  # Iterate only for i < j due to symmetry
-            gamma = np.random.rand()
-            if gamma < max(S_hat_k[i, j], epsilon):
-                A_next[i, j] = 1
-                A_next[j, i] = 1  # Ensure symmetry
+    # Create mask for upper triangle (i < j)
+    upper_triangle_mask = np.triu(np.ones((n, n)), k=1).astype(bool)
+    
+    # Apply threshold condition vectorized
+    edge_mask = (gamma_matrix < np.maximum(S_hat_k, epsilon)) & upper_triangle_mask
+    
+    # Create symmetric adjacency matrix
+    A_next = np.zeros((n, n))
+    A_next[edge_mask] = 1
+    A_next += A_next.T  # Make symmetric
     
     return A_next
 
 
-def validate_matrices(X: np.ndarray, A: np.ndarray) -> bool:
-    """
-    Validate that matrices meet the required properties
-    
-    Args:
-        X: Opinion vector (single topic)
-        A: Adjacency matrix
-        
-    Returns:
-        True if matrices are valid, False otherwise
-    """
-    # Check dimensions
-    if X.shape[0] != A.shape[0] or A.shape[0] != A.shape[1]:
-        return False
-    
-    # Check opinion bounds
-    if np.any(X < 0) or np.any(X > 1):
-        return False
-    
-    # Check adjacency matrix properties
-    if not np.allclose(A, A.T):  # Check symmetry
-        return False
-    
-    if np.any(np.diag(A) != 0):  # Check hollow property
-        return False
-    
-    return True 
+ 

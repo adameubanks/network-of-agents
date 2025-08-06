@@ -80,32 +80,17 @@ class Controller:
     
     def _initialize_agents(self) -> List[Agent]:
         """
-        Initialize agents with random opinions and balanced MBTI distribution.
+        Initialize agents with random opinions.
         
         Returns:
             List of initialized agents
         """
         agents = []
         
-        # MBTI types for balanced distribution
-        mbti_types = [
-            "INTJ", "INTP", "ENTJ", "ENTP",
-            "INFJ", "INFP", "ENFJ", "ENFP", 
-            "ISTJ", "ISFJ", "ESTJ", "ESFJ",
-            "ISTP", "ISFP", "ESTP", "ESFP"
-        ]
-        
-        # Create agents with random opinions and balanced personality distribution
+        # Create agents with random opinions
         for i in range(self.n_agents):
             # Create agent with random opinion
             agent = Agent(agent_id=i)
-            
-            # Ensure balanced distribution by cycling through types
-            mbti_index = i % len(mbti_types)
-            
-            # Override the random assignment with balanced distribution
-            agent.personality["mbti_type"] = mbti_types[mbti_index]
-            
             agents.append(agent)
         
         return agents
@@ -136,18 +121,14 @@ class Controller:
             current_topic = self.topics[0]  # Use single topic for entire simulation
             posts = self.llm_client.generate_posts_for_agents(current_topic, self.agents)
             
-            # Step 2: Interpret all posts using agent-specific prompting
-            # Each agent interprets all posts with their own personality
-            all_interpretations = self.llm_client.interpret_posts_for_agents(posts, current_topic, self.agents)
+            # Step 2: Interpret own posts only (optimized)
+            self_interpretations = self.llm_client.interpret_posts_for_agents(posts, current_topic, self.agents)
             
             # Debug: Print first few timesteps
             if timestep < 3:
                 print(f"Timestep {timestep}:")
                 print(f"  Posts: {posts[:3]}...")
-                for i, interpretations in enumerate(all_interpretations):
-                    print(f"  Agent {i} interpretations: {[f'{x:.3f}' for x in interpretations[:3]]}...")
-                print(f"  Agent 0 personality: {self.agents[0].personality}")
-                print(f"  all_interpretations structure: {[len(interp) for interp in all_interpretations]}")
+                print(f"  Self-interpretations: {[f'{x:.3f}' for x in self_interpretations[:3]]}...")
                 print(f"  Number of agents: {len(self.agents)}")
                 print(f"  Number of posts: {len(posts)}")
             
@@ -155,15 +136,14 @@ class Controller:
             X_current = self._get_opinion_matrix()
             A_current = self.network.get_adjacency_matrix()
             
-            # Use interpreted opinions as input to mathematical dynamics
-            # Take the diagonal of interpreted opinions (each agent's interpretation of their own post)
-            X_interpreted = np.array([all_interpretations[i][i] for i in range(len(all_interpretations))])
+            # Use self-interpretations directly (no diagonal extraction needed)
+            X_interpreted = np.array(self_interpretations)
             X_next = update_opinions(X_interpreted, A_current, self.epsilon)
             
             # Debug: Print first few timesteps
             if timestep < 3:
                 print(f"  Current opinions: {[f'{x:.3f}' for x in X_current[:3]]}...")
-                print(f"  Interpreted opinions: {[f'{x:.3f}' for x in X_interpreted[:3]]}...")
+                print(f"  Self-interpreted opinions: {[f'{x:.3f}' for x in X_interpreted[:3]]}...")
                 print(f"  Next opinions: {[f'{x:.3f}' for x in X_next[:3]]}...")
                 print(f"  Network density: {self.network.get_network_density():.3f}")
                 print()
@@ -176,7 +156,7 @@ class Controller:
             self.network.update_adjacency_matrix(A_next)
             
             # Step 6: Store current state
-            self._store_current_state(posts, all_interpretations)
+            self._store_current_state(posts, self_interpretations)
         
         self.is_running = False
         
@@ -199,12 +179,12 @@ class Controller:
         Update all agent opinions.
         
         Args:
-            new_opinions: New opinion vector
+            new_opinions: New opinion vector (-1 to 1)
         """
         for i, agent in enumerate(self.agents):
             agent.update_opinion(new_opinions[i])
     
-    def _store_current_state(self, posts: List[str], interpretations: List[List[float]]):
+    def _store_current_state(self, posts: List[str], interpretations: List[float]):
         """Store current simulation state."""
         opinions = self._get_opinion_matrix()
         self.opinion_history.append(opinions.copy())
@@ -223,7 +203,7 @@ class Controller:
             self.posts_history.append([])
             
         if interpretations:
-            self.interpretations_history.append(interpretations)
+            self.interpretations_history.append([interpretations])  # Wrap in list for compatibility
         else:
             self.interpretations_history.append([])
     

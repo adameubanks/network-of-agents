@@ -7,6 +7,10 @@ import numpy as np
 from typing import Dict, Any, List
 import json
 import os
+from datetime import datetime
+
+
+
 
 
 def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
@@ -39,7 +43,7 @@ def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
     ax1.set_title(f'Opinion Evolution for Topic: {topic}')
     ax1.legend()
     ax1.grid(True, alpha=0.3)
-    ax1.set_ylim(0, 1)
+    ax1.set_ylim(-1, 1)
     
     # Plot 2: Individual agent opinions
     opinion_array = np.array(opinion_history)
@@ -52,7 +56,7 @@ def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
     ax2.set_title('Individual Agent Opinions')
     ax2.legend()
     ax2.grid(True, alpha=0.3)
-    ax2.set_ylim(0, 1)
+    ax2.set_ylim(-1, 1)
     
     plt.tight_layout()
     
@@ -63,15 +67,16 @@ def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
     plt.show()
 
 
-def save_simulation_data(results: Dict[str, Any], save_path: str):
+def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[str, Any] = None):
     """
     Save simulation data to JSON file.
     
     Args:
         results: Simulation results dictionary
         save_path: Path to save the JSON file
+        config: Configuration dictionary
     """
-    # Create a copy of results for saving (remove any non-serializable objects)
+    # Create a copy of results for saving
     save_data = {
         'topic': results.get('topic', 'Unknown'),
         'mean_opinions': results['mean_opinions'],
@@ -83,6 +88,18 @@ def save_simulation_data(results: Dict[str, Any], save_path: str):
         'simulation_params': results['simulation_params'],
         'random_seed': results['random_seed']
     }
+    
+    # Add metadata if config is provided
+    if config is not None:
+        save_data['metadata'] = {
+            'run_timestamp': datetime.now().isoformat(),
+            'config_source': 'config.json',
+            'config_metadata': {
+                'llm_config': config.get('llm', {}),
+                'simulation_config': config.get('simulation', {}),
+                'output_config': config.get('output', {})
+            }
+        }
     
     with open(save_path, 'w') as f:
         json.dump(save_data, f, indent=2)

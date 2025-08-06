@@ -10,12 +10,12 @@ from .llm_client import LLMClient
 
 class Agent:
     """
-    Represents an individual agent in the social network with unique personality.
+    Represents an individual agent in the social network.
     """
     
     def __init__(self, agent_id: int):
         """
-        Initialize an agent with personality traits.
+        Initialize an agent.
         
         Args:
             agent_id: Unique identifier for the agent
@@ -23,34 +23,11 @@ class Agent:
         self.agent_id = agent_id
         
         # Initialize with random opinion
-        self.current_opinion = np.random.random()
+        self.current_opinion = np.random.uniform(-1, 1)
 
-        # Set random seed for consistent personality (but don't affect numpy)
+        # Set random seed for consistency (but don't affect numpy)
         import random as python_random
         python_random.seed(agent_id)
-        
-        # Generate personality traits
-        self.personality = self._generate_personality()
-    
-    def _generate_personality(self) -> dict:
-        """
-        Generate MBTI personality traits for the agent.
-        
-        Returns:
-            Dictionary containing personality traits
-        """
-        # MBTI types
-        mbti_types = [
-            "INTJ", "INTP", "ENTJ", "ENTP",
-            "INFJ", "INFP", "ENFJ", "ENFP",
-            "ISTJ", "ISFJ", "ESTJ", "ESFJ",
-            "ISTP", "ISFP", "ESTP", "ESFP"
-        ]
-        mbti_type = random.choice(mbti_types)
-        
-        return {
-            "mbti_type": mbti_type
-        }
     
     def generate_post_prompt(self, topic: str) -> str:
         """
@@ -62,43 +39,25 @@ class Agent:
         Returns:
             Agent-specific prompt
         """
-        mbti_type = self.personality["mbti_type"]
-        
-        # MBTI-specific instructions
-        mbti_instructions = {
-            "INTJ": "Be strategic and analytical. Focus on long-term implications and logical reasoning.",
-            "INTP": "Be curious and theoretical. Question assumptions and explore complex ideas.",
-            "ENTJ": "Be decisive and direct. Take charge and express strong, confident opinions.",
-            "ENTP": "Be innovative and argumentative. Challenge conventional thinking with wit.",
-            "INFJ": "Be idealistic and empathetic. Focus on human values and deeper meaning.",
-            "INFP": "Be authentic and values-driven. Express personal feelings and moral convictions.",
-            "ENFJ": "Be inspiring and supportive. Encourage others and focus on harmony.",
-            "ENFP": "Be enthusiastic and creative. Express excitement and explore possibilities.",
-            "ISTJ": "Be practical and responsible. Focus on facts, order, and traditional values.",
-            "ISFJ": "Be caring and loyal. Emphasize harmony, cooperation, and practical support.",
-            "ESTJ": "Be organized and decisive. Value efficiency, structure, and clear leadership.",
-            "ESFJ": "Be warm and sociable. Focus on helping others and maintaining social harmony.",
-            "ISTP": "Be flexible and pragmatic. Adapt to situations with practical problem-solving.",
-            "ISFP": "Be gentle and artistic. Express personal values through quiet, creative means.",
-            "ESTP": "Be energetic and action-oriented. Focus on immediate results and practical solutions.",
-            "ESFP": "Be spontaneous and friendly. Bring energy and fun to social interactions."
-        }
-        
         prompt = f"""
-Generate a 1-2 sentence social media post about {topic}.
-Your MBTI type ({mbti_type}): {mbti_instructions[mbti_type]}
-Your current opinion intensity: {self.current_opinion:.2f} (0=strongly oppose, 1=strongly support)
+Generate a comprehensive statement about {topic} (3-6 sentences, multiple paragraphs if needed).
+Your current opinion intensity: {self.current_opinion:.3f} (-1=strongly oppose, 1=strongly support)
 
-Examples of opinion levels for any topic:
-- Opinion 0.0: "I strongly oppose this and believe it's wrong."
-- Opinion 0.2: "I'm mostly against this but see some valid points."
-- Opinion 0.5: "I'm neutral about this - I don't have strong feelings either way."
-- Opinion 0.8: "I mostly support this but have some concerns."
-- Opinion 1.0: "I fully support this and believe it's right."
+Express your opinion with detailed reasoning, context, and nuance. Examples of opinion levels:
+- Opinion -1.000: "I strongly oppose this and believe it's completely wrong. The negative consequences far outweigh any potential benefits, and I cannot support it under any circumstances. The evidence clearly shows this causes more harm than good, and I stand firmly against it."
+- Opinion -0.750: "I'm strongly against this but acknowledge some complexity. While I see some valid arguments on the other side, the overall impact is too negative to support. There are legitimate concerns that need to be addressed, though I understand why some people might disagree."
+- Opinion -0.500: "I'm mostly against this but see some valid points. There are legitimate concerns that need to be addressed, though I understand some people might disagree. While I have reservations, I can see why others might feel differently."
+- Opinion -0.250: "I'm somewhat against this but open to discussion. I have reservations but could be persuaded with better arguments or evidence. I'm not completely closed off to the idea, but I need more convincing."
+- Opinion 0.000: "I'm completely neutral - I don't have strong feelings either way. I can see both sides and don't feel strongly enough to take a position. There are valid arguments on both sides, and I'm not convinced either way."
+- Opinion 0.250: "I'm somewhat supportive but have reservations. I generally support this but have some concerns that need to be addressed. While I think it's mostly good, there are issues that should be considered."
+- Opinion 0.500: "I mostly support this but have some concerns. While I think it's generally good, there are issues that should be considered. I'm supportive but not without reservations."
+- Opinion 0.750: "I'm strongly supportive but acknowledge some issues. I think this is mostly positive, though there are some problems that need attention. The benefits clearly outweigh the drawbacks."
+- Opinion 1.000: "I fully support this and believe it's completely right. The benefits are clear and I cannot see any significant drawbacks. This is exactly what we need, and I'm fully behind it."
 
-Your opinion is {self.current_opinion:.2f}, so your post should reflect this level of support/opposition for {topic}.
-Keep it under 200 characters.
-Make the post reflect your unique personality and current opinion level.
+Your opinion is {self.current_opinion:.3f}, so your post should reflect this precise level of support/opposition for {topic}.
+Include detailed reasoning, personal context, specific examples, qualifications, and nuanced thoughts.
+Feel free to use multiple paragraphs if needed to fully express your position.
+Keep it under 800 characters.
 """
         return prompt
 
@@ -114,41 +73,25 @@ Make the post reflect your unique personality and current opinion level.
             Generated post text
         """
         prompt = self.generate_post_prompt(topic)
-        return llm_client._generate_single_text(prompt, max_tokens=100, temperature=llm_client.generation_temperature)
+        return llm_client._generate_single_text(prompt, max_tokens=400, temperature=llm_client.generation_temperature)
     
-    def interpret_posts(self, llm_client: LLMClient, posts: List[str], topic: str) -> List[float]:
-        """
-        Interpret posts using agent-specific prompting with individual calls.
-        
-        Args:
-            llm_client: LLM client for post interpretation
-            posts: List of posts to interpret
-            topic: Topic the posts are about
-            
-        Returns:
-            List of interpreted opinion values (0-1)
-        """
-        interpretations = []
-        for post in posts:
-            opinion = self.interpret_single_post(llm_client, post, topic)
-            interpretations.append(opinion)
-        return interpretations
+
     
     def update_opinion(self, new_opinion: float):
         """
         Update the agent's opinion.
         
         Args:
-            new_opinion: New opinion value (0-1)
+            new_opinion: New opinion value (-1 to 1)
         """
-        self.current_opinion = np.clip(new_opinion, 0.0, 1.0)
+        self.current_opinion = new_opinion #np.clip(new_opinion, -1.0, 1.0)
     
     def get_opinion(self) -> float:
         """
         Get current opinion value.
         
         Returns:
-            Current opinion value (0-1)
+            Current opinion value (-1 to 1)
         """
         return self.current_opinion 
 
@@ -163,46 +106,29 @@ Make the post reflect your unique personality and current opinion level.
         Returns:
             Agent-specific interpretation prompt
         """
-        mbti_type = self.personality["mbti_type"]
-        
-        # MBTI-specific interpretation biases
-        mbti_biases = {
-            "INTJ": "Analyze posts strategically. Look for logical consistency and long-term implications.",
-            "INTP": "Question assumptions in posts. Consider alternative perspectives and theoretical frameworks.",
-            "ENTJ": "Evaluate posts for effectiveness and decisiveness. Look for strong, confident positions.",
-            "ENTP": "Challenge conventional thinking in posts. Consider innovative and argumentative perspectives.",
-            "INFJ": "Interpret posts for deeper meaning and human values. Consider emotional and moral implications.",
-            "INFP": "Evaluate posts for authenticity and personal values. Consider emotional truth and moral convictions.",
-            "ENFJ": "Look for inspiring and supportive elements in posts. Consider harmony and encouragement.",
-            "ENFP": "Seek enthusiasm and creativity in posts. Look for excitement and possibility exploration.",
-            "ISTJ": "Focus on facts, order, and traditional values in posts. Look for practical and responsible content.",
-            "ISFJ": "Consider caring and loyal elements in posts. Look for harmony and practical support.",
-            "ESTJ": "Evaluate posts for organization and efficiency. Look for clear structure and leadership.",
-            "ESFJ": "Consider warm and sociable elements in posts. Look for social harmony and helpfulness.",
-            "ISTP": "Look for flexible and pragmatic approaches in posts. Consider practical problem-solving.",
-            "ISFP": "Seek gentle and artistic elements in posts. Look for personal values and quiet creativity.",
-            "ESTP": "Focus on energetic and action-oriented content in posts. Look for immediate practical solutions.",
-            "ESFP": "Look for spontaneous and friendly elements in posts. Consider energy and social fun."
-        }
-        
         prompt = f"""
-Analyze the following post about {topic} and provide a single opinion value.
-Your MBTI type ({mbti_type}): {mbti_biases[mbti_type]}
+Analyze the following detailed post about {topic} and provide a single opinion value.
 
-Examples of opinion ratings for {topic}:
-- 0.0: "I strongly oppose this and believe it's wrong."
-- 0.2: "I'm mostly against this but see some valid points."
-- 0.5: "I'm neutral about this - I don't have strong feelings either way."
-- 0.8: "I mostly support this but have some concerns."
-- 1.0: "I fully support this and believe it's right."
+Consider the overall sentiment, reasoning, qualifications, and context expressed in the post.
+Use 2-3 decimal places for precision. Examples of opinion ratings:
+- -1.000: "I strongly oppose this and believe it's completely wrong."
+- -0.750: "I'm strongly against this but acknowledge some complexity."
+- -0.500: "I'm mostly against this but see some valid points."
+- -0.250: "I'm somewhat against this but open to discussion."
+- 0.000: "I'm completely neutral - I don't have strong feelings either way."
+- 0.250: "I'm somewhat supportive but have reservations."
+- 0.500: "I mostly support this but have some concerns."
+- 0.750: "I'm strongly supportive but acknowledge some issues."
+- 1.000: "I fully support this and believe it's completely right."
 
 Post to analyze: "{post}"
 
-Provide a single number between 0 and 1:
-0 = strongly oppose/disagree
-1 = strongly support/agree
+Consider the nuanced language, qualifications, and reasoning in the post.
+Provide a single number between -1 and 1 with 2-3 decimal places:
+-1.000 = strongly oppose/disagree
+1.000 = strongly support/agree
 
-IMPORTANT: Respond with ONLY a single number between 0 and 1.
+IMPORTANT: Respond with ONLY a single number between -1.000 and 1.000 (e.g., -0.234, 0.567, 0.789).
 """
         return prompt
     
@@ -216,9 +142,9 @@ IMPORTANT: Respond with ONLY a single number between 0 and 1.
             topic: Topic the post is about
             
         Returns:
-            Single interpreted opinion value (0-1)
+            Single interpreted opinion value (-1 to 1)
         """
         prompt = self.interpret_single_post_prompt(post, topic)
-        response = llm_client._generate_single_text(prompt, max_tokens=20, temperature=llm_client.rating_temperature)
+        response = llm_client._generate_single_text(prompt, max_tokens=100, temperature=llm_client.rating_temperature)
         opinion = llm_client._parse_opinion_response(response)
         return opinion 
