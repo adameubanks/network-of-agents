@@ -22,9 +22,9 @@ class Controller:
                  llm_client: LLMClient,
                  n_agents: int = 10,
                  epsilon: float = 0.001,
-                 theta: int = 7,
+                 theta: int = 3,
                  num_timesteps: int = 50,
-                 initial_connection_probability: float = 0.2,
+                 initial_connection_probability: float = 0.3,
                  topics: Optional[List[str]] = None,
                  random_seed: Optional[int] = None,
                  generation_temperature: float = 0.9,
@@ -124,14 +124,6 @@ class Controller:
             # Step 2: Interpret own posts only (optimized)
             self_interpretations = self.llm_client.interpret_posts_for_agents(posts, current_topic, self.agents)
             
-            # Debug: Print first few timesteps
-            if timestep < 3:
-                print(f"Timestep {timestep}:")
-                print(f"  Posts: {posts[:3]}...")
-                print(f"  Self-interpretations: {[f'{x:.3f}' for x in self_interpretations[:3]]}...")
-                print(f"  Number of agents: {len(self.agents)}")
-                print(f"  Number of posts: {len(posts)}")
-            
             # Step 3: Update opinions using mathematical framework
             X_current = self._get_opinion_matrix()
             A_current = self.network.get_adjacency_matrix()
@@ -139,14 +131,6 @@ class Controller:
             # Use self-interpretations directly (no diagonal extraction needed)
             X_interpreted = np.array(self_interpretations)
             X_next = update_opinions(X_interpreted, A_current, self.epsilon)
-            
-            # Debug: Print first few timesteps
-            if timestep < 3:
-                print(f"  Current opinions: {[f'{x:.3f}' for x in X_current[:3]]}...")
-                print(f"  Self-interpreted opinions: {[f'{x:.3f}' for x in X_interpreted[:3]]}...")
-                print(f"  Next opinions: {[f'{x:.3f}' for x in X_next[:3]]}...")
-                print(f"  Network density: {self.network.get_network_density():.3f}")
-                print()
             
             # Step 4: Update agent opinions
             self._update_agent_opinions(X_next)
