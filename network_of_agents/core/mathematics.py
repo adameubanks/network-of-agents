@@ -114,7 +114,7 @@ def update_opinions(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndar
     """
     W_k = calculate_W(X_k, A_k, epsilon)
     X_next = np.dot(W_k, X_k)
-    X_next = np.clip(X_next, -1.0, 1.0)
+    #X_next = np.clip(X_next, -1.0, 1.0)
     
     return X_next
 
@@ -158,15 +158,25 @@ def update_edges(A_k: np.ndarray, X_k: np.ndarray, theta: int, epsilon: float) -
     n = A_k.shape[0]
     S_hat_k = calculate_S_hat(X_k, theta, epsilon)
     
-    gamma_matrix = np.random.rand(n, n)
-    upper_triangle_mask = np.triu(np.ones((n, n)), k=1).astype(bool)
-    
-    threshold_matrix = np.maximum(S_hat_k, epsilon)
-    edge_mask = (gamma_matrix < threshold_matrix) & upper_triangle_mask
-    
     A_next = np.zeros((n, n))
-    A_next[edge_mask] = 1
-    A_next += A_next.T
+    
+    # Follow the exact mathematical approach from the paper
+    for i in range(n):
+        for j in range(n):
+            if i != j:  # Ensure i ≠ j
+                # Generate single random sample γ ∼ U[0,1]
+                gamma = np.random.rand()
+                # Check condition: γ < max(ŝ_ij[k], ε)
+                threshold = max(S_hat_k[i, j], epsilon)
+                
+                if gamma < threshold:
+                    # Set both a_ij[k+1] = 1 and a_ji[k+1] = 1
+                    A_next[i, j] = 1
+                    A_next[j, i] = 1
+                else:
+                    # Set both a_ij[k+1] = 0 and a_ji[k+1] = 0
+                    A_next[i, j] = 0
+                    A_next[j, i] = 0
     
     return A_next
 
