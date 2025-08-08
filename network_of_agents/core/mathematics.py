@@ -52,6 +52,7 @@ def calculate_DN(M: np.ndarray, epsilon: float) -> np.ndarray:
 def calculate_SN(M: np.ndarray, epsilon: float) -> np.ndarray:
     """
     Calculate row-wise similarity matrix SN(M) := R(1 - (I + DN(M)))
+    Diagonal entries are zero before normalization.
     
     Args:
         M: Input matrix
@@ -64,9 +65,9 @@ def calculate_SN(M: np.ndarray, epsilon: float) -> np.ndarray:
         M = M.reshape(-1, 1)
     
     DN_M = calculate_DN(M, epsilon)
-    
-    temp_matrix = 1 - DN_M
-    np.fill_diagonal(temp_matrix, -1)
+    # Construct 1 - (I + DN(M)) so that diagonal is 0 pre-normalization
+    n = DN_M.shape[0]
+    temp_matrix = np.ones_like(DN_M) - (np.eye(n) + DN_M)
     
     return row_normalize(temp_matrix, epsilon)
 

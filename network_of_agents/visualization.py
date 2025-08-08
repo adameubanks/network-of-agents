@@ -38,8 +38,8 @@ def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
     
     timesteps = range(len(mean_opinions))
     
-    # Create figure with subplots
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+    # Create figure with subplots (much taller for improved readability)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 24), constrained_layout=True)
     
     # Plot 1: Mean opinion and standard deviation
     ax1.plot(timesteps, mean_opinions, 'b-', linewidth=2, label='Mean Opinion')
@@ -56,7 +56,6 @@ def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
     ax1.set_xlabel('Timestep')
     ax1.set_ylabel('Opinion Value')
     ax1.set_title(f'Opinion Evolution for Topic: {topic}{title_suffix}')
-    ax1.legend()
     ax1.grid(True, alpha=0.3)
     ax1.set_ylim(-1, 1)
     
@@ -74,7 +73,6 @@ def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
     ax2.set_xlabel('Timestep')
     ax2.set_ylabel('Opinion Value')
     ax2.set_title('Individual Agent Opinions')
-    ax2.legend()
     ax2.grid(True, alpha=0.3)
     ax2.set_ylim(-1, 1)
     
@@ -83,7 +81,7 @@ def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
         fig.suptitle(f"⚠️ PARTIAL RESULTS - Simulation interrupted due to: {error_msg}", 
                     fontsize=12, color='red', y=0.98)
     
-    plt.tight_layout()
+    # With constrained_layout=True above, tight_layout is unnecessary
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -109,12 +107,15 @@ def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[s
         'mean_opinions': results['mean_opinions'],
         'std_opinions': results['std_opinions'],
         'opinion_history': results['opinion_history'],
-        'posts_history': results['posts_history'],
-        'interpretations_history': results['interpretations_history'],
         'final_opinions': results['final_opinions'],
         'simulation_params': results['simulation_params'],
         'random_seed': results['random_seed']
     }
+    # Include text histories only if present
+    if 'posts_history' in results:
+        save_data['posts_history'] = results['posts_history']
+    if 'interpretations_history' in results:
+        save_data['interpretations_history'] = results['interpretations_history']
     
     # Add partial result information if applicable
     if results.get('is_partial', False):
@@ -159,8 +160,8 @@ def print_simulation_summary(results: Dict[str, Any]):
     topic = results.get('topic', 'Unknown Topic')
     mean_opinions = results['mean_opinions']
     std_opinions = results['std_opinions']
-    posts_history = results['posts_history']
-    interpretations_history = results['interpretations_history']
+    posts_history = results.get('posts_history', [])
+    interpretations_history = results.get('interpretations_history', [])
     
     print(f"\n{'='*60}")
     print(f"SIMULATION SUMMARY: {topic}")
@@ -183,12 +184,14 @@ def print_simulation_summary(results: Dict[str, Any]):
         print(f"Mean change in last 10 timesteps: {mean_change:.3f}")
         print(f"Std dev change in last 10 timesteps: {std_change:.3f}")
     
-    print(f"\nSample Posts (Timestep 0):")
-    for i, post in enumerate(posts_history[0]):
-        print(f"  Agent {i}: {post[:100]}...")
+    if posts_history and len(posts_history) > 0 and len(posts_history[0]) > 0:
+        print(f"\nSample Posts (Timestep 0):")
+        for i, post in enumerate(posts_history[0]):
+            print(f"  Agent {i}: {post[:100]}...")
     
-    print(f"\nSample Interpretations (Timestep 0):")
-    for i, interpretations in enumerate(interpretations_history[0]):
-        print(f"  Agent {i}: {[f'{x:.3f}' for x in interpretations[:3]]}...")
+    if interpretations_history and len(interpretations_history) > 0 and len(interpretations_history[0]) > 0:
+        print(f"\nSample Interpretations (Timestep 0):")
+        for i, interpretations in enumerate(interpretations_history[0]):
+            print(f"  Agent {i}: {[f'{x:.3f}' for x in interpretations[:3]]}...")
     
     print(f"{'='*60}") 

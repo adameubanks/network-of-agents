@@ -15,7 +15,7 @@ class LLMClient:
     Streamlined client for LLM-based post generation and interpretation.
     """
     
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gpt-4o-mini", 
+    def __init__(self, api_key: Optional[str] = None, model_name: str = None, 
                  batch_config: Optional[Dict] = None, generation_temperature: float = 0.9, 
                  rating_temperature: float = 0.1):
         """
@@ -78,40 +78,21 @@ class LLMClient:
         Returns:
             List of opinion values (-1 to 1) for each agent's self-interpretation
         """
+        prompts = []
+        for i, agent in enumerate(agents):
+            prompt = agent.interpret_single_post_prompt(posts[i], topic)
+            prompts.append(prompt)
+        
+        responses = self._call_llm(prompts, max_tokens=100, temperature=self.rating_temperature)
         self_interpretations = []
         
-        for i, agent in enumerate(agents):
-            opinion = agent.interpret_single_post(self, posts[i], topic)
+        for response in responses:
+            opinion = self._parse_opinion_response(response)
             self_interpretations.append(opinion)
         
         return self_interpretations
     
-    def interpret_single_post(self, agent, post: str, topic: str) -> float:
-        """
-        Interpret a single post using agent-specific prompting.
-        
-        Args:
-            agent: Agent object
-            post: Single post to interpret
-            topic: Topic the post is about
-            
-        Returns:
-            Single opinion value (0-1)
-        """
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                prompt = agent.interpret_single_post_prompt(post, topic)
-                response = self._generate_single_text(prompt, max_tokens=100)
-                opinion = self._parse_opinion_response(response)
-                return opinion
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    print(f"Warning: Failed to interpret post after {max_retries} attempts. Using fallback value 0.5. Error: {e}")
-                    return 0.5  # Fallback to neutral opinion
-                else:
-                    print(f"Attempt {attempt + 1} failed, retrying... Error: {e}")
-                    continue
+
     
     def _generate_single_text(self, prompt: str, max_tokens: int = 1000, temperature: float = None) -> str:
         """
@@ -120,43 +101,18 @@ class LLMClient:
         Args:
             prompt: Input prompt
             max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature (uses default if None)
+            temperature: Sampling temperature (uses class default if None)
             
         Returns:
             Generated text
         """
-        max_retries = 3
-        base_delay = 1  # seconds
-        
-        for attempt in range(max_retries):
-            try:
-                response = litellm.completion(
-                    model=self.model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                    temperature=temperature if temperature is not None else 0.7
-                )
-                return response.choices[0].message.content
-            except Exception as e:
-                error_str = str(e).lower()
-                
-                # Check if it's a rate limit error
-                if 'rate limit' in error_str or 'quota' in error_str or '429' in error_str:
-                    if attempt < max_retries - 1:
-                        delay = base_delay * (2 ** attempt)  # Exponential backoff
-                        print(f"Rate limit hit, waiting {delay} seconds before retry {attempt + 1}/{max_retries}")
-                        import time
-                        time.sleep(delay)
-                        continue
-                    else:
-                        print(f"Rate limit error after {max_retries} retries: {e}")
-                        raise Exception(f"Rate limit exceeded after {max_retries} retries: {e}")
-                else:
-                    # For non-rate-limit errors, don't retry
-                    raise Exception(f"LLM generation failed: {e}")
-        
-        # This should never be reached, but just in case
-        raise Exception("LLM generation failed after all retries")
+        response = litellm.completion(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature if temperature is not None else self.generation_temperature
+        )
+        return response.choices[0].message.content
     
 
     
@@ -174,49 +130,23 @@ class LLMClient:
         """
         messages = [[{"role": "user", "content": prompt}] for prompt in prompts]
         
-        max_retries = 3
-        base_delay = 1  # seconds
+        responses = litellm.batch_completion(
+            model=self.model_name,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            max_workers=min(len(messages), self.max_workers),
+            timeout=self.timeout
+        )
         
-        for attempt in range(max_retries):
-            try:
-                responses = litellm.batch_completion(
-                    model=self.model_name,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    max_workers=min(len(messages), self.max_workers),
-                    timeout=self.timeout
-                )
-                
-                results = []
-                for response in responses:
-                    if hasattr(response, 'choices') and len(response.choices) > 0:
-                        results.append(response.choices[0].message.content)
-                    else:
-                        raise Exception("LLM response missing choices")
-                
-                return results
-                
-            except Exception as e:
-                error_str = str(e).lower()
-                
-                # Check if it's a rate limit error
-                if 'rate limit' in error_str or 'quota' in error_str or '429' in error_str:
-                    if attempt < max_retries - 1:
-                        delay = base_delay * (2 ** attempt)  # Exponential backoff
-                        print(f"Rate limit hit in batch processing, waiting {delay} seconds before retry {attempt + 1}/{max_retries}")
-                        import time
-                        time.sleep(delay)
-                        continue
-                    else:
-                        print(f"Rate limit error in batch processing after {max_retries} retries: {e}")
-                        raise Exception(f"Rate limit exceeded in batch processing after {max_retries} retries: {e}")
-                else:
-                    # For non-rate-limit errors, don't retry
-                    raise Exception(f"Batch LLM processing failed: {e}")
+        results = []
+        for response in responses:
+            if hasattr(response, 'choices') and len(response.choices) > 0:
+                results.append(response.choices[0].message.content)
+            else:
+                raise Exception("LLM response missing choices")
         
-        # This should never be reached, but just in case
-        raise Exception("Batch LLM processing failed after all retries")
+        return results
     
     def _parse_opinion_response(self, response: str) -> float:
         """

@@ -30,7 +30,7 @@ def load_config(config_path: str = "config.json") -> Dict[str, Any]:
         return json.load(f)
 
 
-def create_llm_client(config: Dict[str, Any]) -> LLMClient:
+def create_llm_client(config: Dict[str, Any]) -> Optional[LLMClient]:
     """
     Create LLM client from configuration.
     
@@ -41,6 +41,9 @@ def create_llm_client(config: Dict[str, Any]) -> LLMClient:
         LLM client
     """
     llm_config = config.get('llm', {})
+    # If LLM is disabled, return None and skip API checks
+    if llm_config.get('enabled', True) is False:
+        return None
     api_key_env = llm_config.get('api_key_env', 'OPENAI_API_KEY')
     api_key = os.getenv(api_key_env)
     
@@ -48,7 +51,7 @@ def create_llm_client(config: Dict[str, Any]) -> LLMClient:
         raise ValueError(f"No API key found in environment variable {api_key_env}")
     
     # Get model configuration
-    model_name = llm_config.get('model_name', 'gpt-4o-mini')
+    model_name = llm_config.get('model_name')
     
     # Get batch configuration
     batch_config = llm_config.get('batch', {})
@@ -78,6 +81,13 @@ def run_simulation(config: Dict[str, Any], topic: str,
     # Extract parameters
     sim_config = config['simulation']
     llm_config = config.get('llm', {})
+    llm_enabled = llm_config.get('enabled', True)
+
+    noise_config = config.get('noise', {})
+    noise_enabled = noise_config.get('enabled', False)
+    noise_mean = noise_config.get('mean', 0.0)
+    noise_std = noise_config.get('std', 0.0)
+    noise_clip = noise_config.get('clip', True)
     
     # Use provided seed or default from config
     if random_seed is None:
@@ -101,11 +111,20 @@ def run_simulation(config: Dict[str, Any], topic: str,
         topics=[topic],  # Single topic only
         random_seed=random_seed,
         generation_temperature=generation_temperature,
-        rating_temperature=rating_temperature
+        rating_temperature=rating_temperature,
+        llm_enabled=llm_enabled,
+        noise_enabled=noise_enabled,
+        noise_mean=noise_mean,
+        noise_std=noise_std,
+        noise_clip=noise_clip
     )
     
     # Run simulation
     print(f"Starting simulation for topic: {topic}")
+    if llm_enabled:
+        print(f"Mode: LLM (model={llm_config.get('model_name')}, gen_T={generation_temperature}, rate_T={rating_temperature})")
+    else:
+        print(f"Mode: NO-LLM (noise={'on' if noise_enabled else 'off'}, mean={noise_mean}, std={noise_std}, clip={noise_clip})")
     print(f"Initial opinions: {[agent.get_opinion() for agent in controller.agents]}")
     start_time = time.time()
     results = controller.run_simulation(progress_bar=True)
@@ -254,7 +273,12 @@ def generate_default_filenames(topic: str, config: Dict[str, Any], is_partial: b
     # Extract key parameters for filename from config
     n_agents = config['simulation']['n_agents']
     num_timesteps = config['simulation']['num_timesteps']
-    model_name = config.get('llm', {}).get('model_name', 'unknown')
+    llm_enabled = config.get('llm', {}).get('enabled', True)
+    if not llm_enabled:
+        noise_cfg = config.get('noise', {})
+        model_name = 'no-llm-noise' if noise_cfg.get('enabled', False) else 'no-llm'
+    else:
+        model_name = config.get('llm', {}).get('model_name', 'unknown')
     
     # Create safe topic name for filename
     topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')

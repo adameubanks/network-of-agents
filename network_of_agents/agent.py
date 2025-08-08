@@ -5,7 +5,6 @@ Agent class for post generation and interpretation.
 import numpy as np
 import random
 from typing import List, Optional
-from .llm_client import LLMClient
 
 
 class Agent:
@@ -61,19 +60,7 @@ Keep it under 800 characters.
 """
         return prompt
 
-    def generate_post(self, llm_client: LLMClient, topic: str) -> str:
-        """
-        Generate a post about the given topic using agent-specific prompting.
-        
-        Args:
-            llm_client: LLM client for post generation
-            topic: Topic to generate post about
-            
-        Returns:
-            Generated post text
-        """
-        prompt = self.generate_post_prompt(topic)
-        return llm_client._generate_single_text(prompt, max_tokens=400, temperature=llm_client.generation_temperature)
+
     
 
     
@@ -132,19 +119,4 @@ IMPORTANT: Respond with ONLY a single number between -1.000 and 1.000 (e.g., -0.
 """
         return prompt
     
-    def interpret_single_post(self, llm_client: LLMClient, post: str, topic: str) -> float:
-        """
-        Interpret a single post using agent-specific prompting.
-        
-        Args:
-            llm_client: LLM client for post interpretation
-            post: Single post to interpret
-            topic: Topic the post is about
-            
-        Returns:
-            Single interpreted opinion value (-1 to 1)
-        """
-        prompt = self.interpret_single_post_prompt(post, topic)
-        response = llm_client._generate_single_text(prompt, max_tokens=100, temperature=llm_client.rating_temperature)
-        opinion = llm_client._parse_opinion_response(response)
-        return opinion 
+ 

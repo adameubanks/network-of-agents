@@ -8,6 +8,7 @@
     "random_seed": 42
   },
   "llm": {
+    "enabled": false,
     "api_key_env": "OPENAI_API_KEY",
     "model_name": "gpt-4o",
     "generation_temperature": 0.9,
@@ -17,11 +18,14 @@
       "timeout": 600
     }
   },
+  "noise": {
+    "enabled": true,
+    "mean": 1.0,
+    "std": 1.0,
+    "clip": true
+  },
   "topics": [
-    "liberals",
-    "conservatives",
-    "queer persons",
-    "gay people"
+    "test topic"
   ],
   "output": {
     "save_results": true,
@@ -29,4 +33,5 @@
     "results_directory": "results",
     "filename_pattern": "descriptive"
   }
-} 
+}
+

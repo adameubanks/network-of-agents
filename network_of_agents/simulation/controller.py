@@ -19,7 +19,7 @@ class Controller:
     """
     
     def __init__(self, 
-                 llm_client: LLMClient,
+                 llm_client: Optional[LLMClient] = None,
                  n_agents: int = 10,
                  epsilon: float = 0.001,
                  theta: int = 3,
@@ -28,7 +28,12 @@ class Controller:
                  topics: Optional[List[str]] = None,
                  random_seed: Optional[int] = None,
                  generation_temperature: float = 0.9,
-                 rating_temperature: float = 0.1):
+                 rating_temperature: float = 0.1,
+                 llm_enabled: bool = True,
+                 noise_enabled: bool = False,
+                 noise_mean: float = 0.0,
+                 noise_std: float = 0.0,
+                 noise_clip: bool = True):
         """
         Initialize simulation controller.
         
@@ -58,10 +63,16 @@ class Controller:
         self.random_seed = random_seed
         self.generation_temperature = generation_temperature
         self.rating_temperature = rating_temperature
+        self.llm_enabled = llm_enabled
+        self.noise_enabled = noise_enabled
+        self.noise_mean = noise_mean
+        self.noise_std = noise_std
+        self.noise_clip = noise_clip
         
         # Update LLM client temperatures from config
-        self.llm_client.generation_temperature = generation_temperature
-        self.llm_client.rating_temperature = rating_temperature
+        if self.llm_enabled and self.llm_client is not None:
+            self.llm_client.generation_temperature = generation_temperature
+            self.llm_client.rating_temperature = rating_temperature
         
         # Initialize components
         self.network = NetworkModel(n_agents, initial_connection_probability, random_seed)
@@ -109,7 +120,10 @@ class Controller:
         self.current_timestep = 0
         
         # Store initial state
-        self._store_current_state([], [])
+        if self.llm_enabled:
+            self._store_current_state([], [])
+        else:
+            self._store_current_state(None, None)
         
         # Main simulation loop
         iterator = tqdm(range(self.num_timesteps), desc="Running simulation") if progress_bar else range(self.num_timesteps)
@@ -118,30 +132,49 @@ class Controller:
             for timestep in iterator:
                 self.current_timestep = timestep
                 
-                # Step 1: Generate all posts using agent-specific prompting
+                # Step 1/2: Generate posts and interpretations (LLM) or skip (no-LLM)
                 current_topic = self.topics[0]  # Use single topic for entire simulation
-                posts = self.llm_client.generate_posts_for_agents(current_topic, self.agents)
-                
-                # Step 2: Interpret own posts only (optimized)
-                self_interpretations = self.llm_client.interpret_posts_for_agents(posts, current_topic, self.agents)
-                
+                if self.llm_enabled:
+                    posts = self.llm_client.generate_posts_for_agents(current_topic, self.agents)
+                    self_interpretations = self.llm_client.interpret_posts_for_agents(posts, current_topic, self.agents)
+                else:
+                    posts = None
+                    self_interpretations = None
+
                 # Step 3: Update opinions using mathematical framework
                 X_current = self._get_opinion_matrix()
                 A_current = self.network.get_adjacency_matrix()
-                
-                # Use self-interpretations directly (no diagonal extraction needed)
-                X_interpreted = np.array(self_interpretations)
-                X_next = update_opinions(X_interpreted, A_current, self.epsilon)
-                
-                # Step 4: Update agent opinions
-                self._update_agent_opinions(X_next)
-                
-                # Step 5: Update network topology based on opinion similarity
-                A_next = update_edges(A_current, X_next, self.theta, self.epsilon)
+
+                if self.llm_enabled:
+                    X_interpreted = np.array(self_interpretations)
+                else:
+                    # No-LLM: self-perception equals current opinions, with optional Gaussian noise
+                    X_interpreted = X_current.copy()
+                    if self.noise_enabled and self.noise_std > 0.0:
+                        noise = np.random.normal(self.noise_mean, self.noise_std, size=self.n_agents)
+                        X_interpreted = X_interpreted + noise
+                        if self.noise_clip:
+                            X_interpreted = np.clip(X_interpreted, -1.0, 1.0)
+
+                # Convert to math domain [0, 1] just-in-time for opinion dynamics
+                X_for_math = self._to_math_domain(X_interpreted)
+
+                # Compute next opinions in math domain
+                X_next_math = update_opinions(X_for_math, A_current, self.epsilon)
+
+                # Step 4: Update network topology based on opinion similarity using math-domain opinions
+                A_next = update_edges(A_current, X_next_math, self.theta, self.epsilon)
                 self.network.update_adjacency_matrix(A_next)
-                
+
+                # Step 5: Convert back to agent domain [-1, 1] and update agent opinions
+                X_next_agent = self._to_agent_domain(X_next_math)
+                self._update_agent_opinions(X_next_agent)
+
                 # Step 6: Store current state
-                self._store_current_state(posts, self_interpretations)
+                if self.llm_enabled:
+                    self._store_current_state(posts, self_interpretations)
+                else:
+                    self._store_current_state(None, None)
             
             self.is_running = False
             return self._get_simulation_results()
@@ -168,12 +201,10 @@ class Controller:
         Returns:
             Dictionary containing partial simulation results
         """
-        return {
+        results: Dict[str, Any] = {
             'opinion_history': [op.tolist() for op in self.opinion_history],
             'mean_opinions': self.mean_opinions,
             'std_opinions': self.std_opinions,
-            'posts_history': self.posts_history,
-            'interpretations_history': self.interpretations_history,
             'final_opinions': self._get_opinion_matrix().tolist(),
             'final_adjacency': self.network.get_adjacency_matrix().tolist(),
             'simulation_params': {
@@ -181,12 +212,21 @@ class Controller:
                 'num_timesteps': self.num_timesteps,
                 'epsilon': self.epsilon,
                 'theta': self.theta,
-                'initial_connection_probability': self.initial_connection_probability
+                'initial_connection_probability': self.initial_connection_probability,
+                'llm_enabled': self.llm_enabled,
+                'noise_enabled': self.noise_enabled,
+                'noise_mean': self.noise_mean,
+                'noise_std': self.noise_std,
+                'noise_clip': self.noise_clip,
             },
             'random_seed': self.random_seed,
             'topics': self.topics,
             'is_partial': True
         }
+        if self.llm_enabled:
+            results['posts_history'] = self.posts_history
+            results['interpretations_history'] = self.interpretations_history
+        return results
     
     def _get_opinion_matrix(self) -> np.ndarray:
         """
@@ -199,18 +239,26 @@ class Controller:
         for agent in self.agents:
             opinions.append(agent.get_opinion())
         return np.array(opinions)
+
+    def _to_math_domain(self, x: np.ndarray) -> np.ndarray:
+        """Map agent-domain opinions x ∈ [-1, 1] to math-domain s ∈ [0, 1]."""
+        return (x + 1.0) / 2.0
+
+    def _to_agent_domain(self, s: np.ndarray) -> np.ndarray:
+        """Map math-domain opinions s ∈ [0, 1] back to agent-domain x ∈ [-1, 1]."""
+        return (2.0 * s) - 1.0
     
     def _update_agent_opinions(self, new_opinions: np.ndarray):
         """
         Update all agent opinions.
         
         Args:
-            new_opinions: New opinion vector (-1 to 1)
+            new_opinions: New opinion vector in agent domain [-1, 1]
         """
         for i, agent in enumerate(self.agents):
             agent.update_opinion(new_opinions[i])
     
-    def _store_current_state(self, posts: List[str], interpretations: List[float]):
+    def _store_current_state(self, posts: Optional[List[str]], interpretations: Optional[List[float]]):
         """Store current simulation state."""
         opinions = self._get_opinion_matrix()
         self.opinion_history.append(opinions.copy())
@@ -222,16 +270,12 @@ class Controller:
         self.mean_opinions.append(mean_opinion)
         self.std_opinions.append(std_opinion)
         
-        # Only store posts and interpretations if they exist (not for initial state)
-        if posts:
+        # Only store posts and interpretations when provided (LLM mode only)
+        if posts is not None:
             self.posts_history.append(posts)
-        else:
-            self.posts_history.append([])
-            
-        if interpretations:
-            self.interpretations_history.append([interpretations])  # Wrap in list for compatibility
-        else:
-            self.interpretations_history.append([])
+        if interpretations is not None:
+            # Wrap in list for compatibility with existing structure
+            self.interpretations_history.append([interpretations])
     
     def _get_simulation_results(self) -> Dict[str, Any]:
         """
@@ -240,12 +284,10 @@ class Controller:
         Returns:
             Dictionary containing simulation results
         """
-        return {
+        results: Dict[str, Any] = {
             'opinion_history': [op.tolist() for op in self.opinion_history],
             'mean_opinions': self.mean_opinions,
             'std_opinions': self.std_opinions,
-            'posts_history': self.posts_history,
-            'interpretations_history': self.interpretations_history,
             'final_opinions': self._get_opinion_matrix().tolist(),
             'final_adjacency': self.network.get_adjacency_matrix().tolist(),
             'simulation_params': {
@@ -253,11 +295,20 @@ class Controller:
                 'num_timesteps': self.num_timesteps,
                 'epsilon': self.epsilon,
                 'theta': self.theta,
-                'initial_connection_probability': self.initial_connection_probability
+                'initial_connection_probability': self.initial_connection_probability,
+                'llm_enabled': self.llm_enabled,
+                'noise_enabled': self.noise_enabled,
+                'noise_mean': self.noise_mean,
+                'noise_std': self.noise_std,
+                'noise_clip': self.noise_clip,
             },
             'random_seed': self.random_seed,
             'topics': self.topics
         }
+        if self.llm_enabled:
+            results['posts_history'] = self.posts_history
+            results['interpretations_history'] = self.interpretations_history
+        return results
     
     def get_current_state(self) -> Dict[str, Any]:
         """

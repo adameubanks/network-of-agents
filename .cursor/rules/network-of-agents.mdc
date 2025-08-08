@@ -205,7 +205,7 @@ Effective visualization is crucial to understand the opinion dynamics and networ
 The mathematical model *is* how your LLM agents behave. To incorporate the LLM aspect and test for biases:
 
 1.  **Initialization of LLM Agent "Personas" / Initial Opinions:**
-    *   Instead of purely random `X`, you could use an LLM (e.g., GPT-4) to generate initial opinion vectors for each agent based on a short prompt defining an "agent persona" (e.g., "Generate a vector of opinions on [topics] for a [conservative/liberal/neutral] individual interested in [specific fields]"). This grounds the initial state in LLM-generated "human-like" opinions.
+    *   Instead of purely random `X`, you could use an LLM (e.g., GPT-5) to generate initial opinion vectors for each agent based on a short prompt defining an "agent persona" (e.g., "Generate a vector of opinions on [topics] for a [conservative/liberal/neutral] individual interested in [specific fields]"). This grounds the initial state in LLM-generated "human-like" opinions.
     *   The paper shows LLMs can quantify opinions from text. You could feed the LLM agent persona descriptions and have the LLM infer their initial `x_i`.
 
 2.  **Testing for Biases and Fairness:**
@@ -216,7 +216,7 @@ The mathematical model *is* how your LLM agents behave. To incorporate the LLM a
         *   **Biased samples:** A majority of agents initially leaning towards one side of an opinion.
     *   **Observation:** Analyze the **convergence patterns** (do opinions always converge to a narrow range? Do they polarize? Are certain "fringe" opinions consistently suppressed or amplified?) and the **formation of echo chambers** (do agents with certain initial opinions consistently isolate themselves?).
     *   **Relate to Fairness:** Does the simulation model opinion dynamics in a way that disproportionately disadvantages or amplifies certain viewpoints, potentially reflecting biases inherent in the LLMs' training data or their "behavioral" rules (as modeled by the equations)? The **NIST guidelines on "fairness" for ethical AI systems** are directly relevant here.
-    *   **Qualitative Analysis with LLM Content Generation:** At significant time steps (e.g., `k=0`, `k=final_converged_state`), take the *average* opinion vector for a cluster or the entire network, and then use a generative LLM (like ChatGPT, as in Table I) to **generate a "social media post"** that reflects that converged numerical opinion. This makes the abstract numbers concrete and can help in qualitative assessment of biases (e.g., "Does the converged opinion sound reasonable/fair, or does it sound biased/extreme?").
+    *   **Qualitative Analysis with LLM Content Generation:** At significant time steps (e.g., `k=0`, `k=final_converged_state`), take the *average* opinion vector for a cluster or the entire network, and then use a generative LLM to **generate a "social media post"** that reflects that converged numerical opinion. This makes the abstract numbers concrete and can help in qualitative assessment of biases (e.g., "Does the converged opinion sound reasonable/fair, or does it sound biased/extreme?").
 
 By following this detailed plan, you can effectively build a robust simulation that leverages the mathematical foundation provided by the paper, allowing you to thoroughly investigate how a network of LLM agents models opinion dynamics and whether any biases emerge in their convergence.
 ---
