@@ -26,6 +26,16 @@ def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
     opinion_history = results['opinion_history']
     topic = results.get('topic', 'Unknown Topic')
     
+    # Check if results are partial
+    is_partial = results.get('is_partial', False)
+    if is_partial:
+        completed_timesteps = results.get('completed_timesteps', len(mean_opinions))
+        total_timesteps = results.get('total_timesteps', len(mean_opinions))
+        error_msg = results.get('error', 'Unknown error')
+        title_suffix = f" (PARTIAL - {completed_timesteps}/{total_timesteps} timesteps)"
+    else:
+        title_suffix = ""
+    
     timesteps = range(len(mean_opinions))
     
     # Create figure with subplots
@@ -38,9 +48,14 @@ def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
                      [m + s for m, s in zip(mean_opinions, std_opinions)],
                      alpha=0.3, color='blue', label='±1 Std Dev')
     
+    # Add vertical line for partial results to show where simulation stopped
+    if is_partial and len(mean_opinions) > 0:
+        ax1.axvline(x=len(mean_opinions)-1, color='red', linestyle='--', alpha=0.7, 
+                   label=f'Simulation stopped (timestep {len(mean_opinions)})')
+    
     ax1.set_xlabel('Timestep')
     ax1.set_ylabel('Opinion Value')
-    ax1.set_title(f'Opinion Evolution for Topic: {topic}')
+    ax1.set_title(f'Opinion Evolution for Topic: {topic}{title_suffix}')
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     ax1.set_ylim(-1, 1)
@@ -51,6 +66,11 @@ def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
         ax2.plot(timesteps, opinion_array[:, i], 
                 label=f'Agent {i}', alpha=0.7, linewidth=1.5)
     
+    # Add vertical line for partial results
+    if is_partial and len(opinion_history) > 0:
+        ax2.axvline(x=len(opinion_history)-1, color='red', linestyle='--', alpha=0.7, 
+                   label=f'Simulation stopped (timestep {len(opinion_history)})')
+    
     ax2.set_xlabel('Timestep')
     ax2.set_ylabel('Opinion Value')
     ax2.set_title('Individual Agent Opinions')
@@ -58,11 +78,18 @@ def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
     ax2.grid(True, alpha=0.3)
     ax2.set_ylim(-1, 1)
     
+    # Add error message for partial results
+    if is_partial:
+        fig.suptitle(f"⚠️ PARTIAL RESULTS - Simulation interrupted due to: {error_msg}", 
+                    fontsize=12, color='red', y=0.98)
+    
     plt.tight_layout()
     
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Plot saved to: {save_path}")
+        if is_partial:
+            print(f"⚠️  Note: This is a partial result plot (simulation was interrupted)")
     
     plt.show()
 
@@ -89,6 +116,14 @@ def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[s
         'random_seed': results['random_seed']
     }
     
+    # Add partial result information if applicable
+    if results.get('is_partial', False):
+        save_data['is_partial'] = True
+        save_data['interrupted_at_timestep'] = results.get('interrupted_at_timestep')
+        save_data['completed_timesteps'] = results.get('completed_timesteps')
+        save_data['total_timesteps'] = results.get('total_timesteps')
+        save_data['error'] = results.get('error')
+    
     # Add metadata if config is provided
     if config is not None:
         save_data['metadata'] = {
@@ -101,10 +136,17 @@ def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[s
             }
         }
     
+    # Save to file
     with open(save_path, 'w') as f:
         json.dump(save_data, f, indent=2)
     
     print(f"Simulation data saved to: {save_path}")
+    
+    # Add warning for partial results
+    if results.get('is_partial', False):
+        print(f"⚠️  Note: This is partial simulation data (simulation was interrupted)")
+        print(f"   Completed: {results.get('completed_timesteps', 0)}/{results.get('total_timesteps', 0)} timesteps")
+        print(f"   Error: {results.get('error', 'Unknown error')}")
 
 
 def print_simulation_summary(results: Dict[str, Any]):

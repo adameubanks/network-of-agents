@@ -113,6 +113,15 @@ def run_simulation(config: Dict[str, Any], topic: str,
     
     print(f"Simulation completed in {end_time - start_time:.2f} seconds")
     
+    # Check if simulation was interrupted
+    is_partial = results.get('is_partial', False)
+    if is_partial:
+        print(f"⚠️  SIMULATION INTERRUPTED")
+        print(f"   Completed: {results.get('completed_timesteps', 0)}/{results.get('total_timesteps', 0)} timesteps")
+        print(f"   Error: {results.get('error', 'Unknown error')}")
+    else:
+        print(f"✅ SIMULATION COMPLETED SUCCESSFULLY")
+    
     # Print final summary for this topic
     final_opinions = results['final_opinions']
     final_avg = sum(final_opinions) / len(final_opinions)
@@ -223,13 +232,14 @@ def compare_topics(all_results: Dict[str, Any]) -> Dict[str, Any]:
     return comparison
 
 
-def generate_default_filenames(topic: str, config: Dict[str, Any]) -> tuple:
+def generate_default_filenames(topic: str, config: Dict[str, Any], is_partial: bool = False) -> tuple:
     """
     Generate default filenames for saving results.
     
     Args:
         topic: Topic name
         config: Configuration dictionary
+        is_partial: Whether these are partial results
         
     Returns:
         Tuple of (data_filename, plot_filename)
@@ -249,9 +259,12 @@ def generate_default_filenames(topic: str, config: Dict[str, Any]) -> tuple:
     # Create safe topic name for filename
     topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
     
+    # Add partial indicator if needed
+    partial_suffix = "_PARTIAL" if is_partial else ""
+    
     # Generate descriptive filename
-    data_filename = f"{results_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{timestamp}.json"
-    plot_filename = f"{results_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{timestamp}.png"
+    data_filename = f"{results_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{timestamp}{partial_suffix}.json"
+    plot_filename = f"{results_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{timestamp}{partial_suffix}.png"
     
     return data_filename, plot_filename
 
@@ -288,23 +301,34 @@ def main():
         print(f"Timesteps: {results['simulation_params']['num_timesteps']}")
         print(f"Random seed: {results['random_seed']}")
         
-        # Analyze convergence
-        analysis = analyze_topic_convergence(results)
-        if 'error' not in analysis:
-            print(f"\nConvergence Analysis:")
-            print(f"  Initial mean opinion: {analysis['initial_mean']:.3f}")
-            print(f"  Final mean opinion: {analysis['final_mean']:.3f}")
-            print(f"  Initial std dev: {analysis['initial_std']:.3f}")
-            print(f"  Final std dev: {analysis['final_std']:.3f}")
-            print(f"  Mean change in last 10 timesteps: {analysis['mean_change_last_10']:.3f}")
-            print(f"  Std dev change in last 10 timesteps: {analysis['std_change_last_10']:.3f}")
-            print(f"  Converged: {'Yes' if analysis['converged'] else 'No'}")
+        # Check if results are partial
+        is_partial = results.get('is_partial', False)
+        if is_partial:
+            print(f"⚠️  PARTIAL RESULTS - Simulation was interrupted")
+            print(f"   Completed: {results.get('completed_timesteps', 0)}/{results.get('total_timesteps', 0)} timesteps")
+            print(f"   Error: {results.get('error', 'Unknown error')}")
+        else:
+            print(f"✅ COMPLETE RESULTS - Simulation finished successfully")
+        
+        # Analyze convergence (only if we have enough data)
+        if len(results.get('mean_opinions', [])) > 1:
+            analysis = analyze_topic_convergence(results)
+            if 'error' not in analysis:
+                print(f"\nConvergence Analysis:")
+                print(f"  Initial mean opinion: {analysis['initial_mean']:.3f}")
+                print(f"  Final mean opinion: {analysis['final_mean']:.3f}")
+                print(f"  Initial std dev: {analysis['initial_std']:.3f}")
+                print(f"  Final std dev: {analysis['final_std']:.3f}")
+                if not is_partial:  # Only show convergence metrics for complete runs
+                    print(f"  Mean change in last 10 timesteps: {analysis['mean_change_last_10']:.3f}")
+                    print(f"  Std dev change in last 10 timesteps: {analysis['std_change_last_10']:.3f}")
+                    print(f"  Converged: {'Yes' if analysis['converged'] else 'No'}")
         
         # Print detailed summary
         print_simulation_summary(results)
         
         # Determine save paths
-        data_path, plot_path = generate_default_filenames(results['topic'], config)
+        data_path, plot_path = generate_default_filenames(results['topic'], config, is_partial=is_partial)
         
         # Save data if requested
         save_simulation_data(results, data_path, config)
@@ -341,7 +365,8 @@ def main():
         # Save data and generate plots for each topic
         for topic, results in all_results.items():
             if 'error' not in results:
-                data_path, plot_path = generate_default_filenames(topic, config)
+                is_partial = results.get('is_partial', False)
+                data_path, plot_path = generate_default_filenames(topic, config, is_partial=is_partial)
                 save_simulation_data(results, data_path, config)
                 
                 plot_opinion_evolution(results, save_path=plot_path)

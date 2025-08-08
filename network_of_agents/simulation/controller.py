@@ -114,37 +114,79 @@ class Controller:
         # Main simulation loop
         iterator = tqdm(range(self.num_timesteps), desc="Running simulation") if progress_bar else range(self.num_timesteps)
         
-        for timestep in iterator:
-            self.current_timestep = timestep
+        try:
+            for timestep in iterator:
+                self.current_timestep = timestep
+                
+                # Step 1: Generate all posts using agent-specific prompting
+                current_topic = self.topics[0]  # Use single topic for entire simulation
+                posts = self.llm_client.generate_posts_for_agents(current_topic, self.agents)
+                
+                # Step 2: Interpret own posts only (optimized)
+                self_interpretations = self.llm_client.interpret_posts_for_agents(posts, current_topic, self.agents)
+                
+                # Step 3: Update opinions using mathematical framework
+                X_current = self._get_opinion_matrix()
+                A_current = self.network.get_adjacency_matrix()
+                
+                # Use self-interpretations directly (no diagonal extraction needed)
+                X_interpreted = np.array(self_interpretations)
+                X_next = update_opinions(X_interpreted, A_current, self.epsilon)
+                
+                # Step 4: Update agent opinions
+                self._update_agent_opinions(X_next)
+                
+                # Step 5: Update network topology based on opinion similarity
+                A_next = update_edges(A_current, X_next, self.theta, self.epsilon)
+                self.network.update_adjacency_matrix(A_next)
+                
+                # Step 6: Store current state
+                self._store_current_state(posts, self_interpretations)
             
-            # Step 1: Generate all posts using agent-specific prompting
-            current_topic = self.topics[0]  # Use single topic for entire simulation
-            posts = self.llm_client.generate_posts_for_agents(current_topic, self.agents)
+            self.is_running = False
+            return self._get_simulation_results()
             
-            # Step 2: Interpret own posts only (optimized)
-            self_interpretations = self.llm_client.interpret_posts_for_agents(posts, current_topic, self.agents)
+        except Exception as e:
+            # Save partial results when an error occurs
+            self.is_running = False
+            print(f"\nSimulation interrupted at timestep {self.current_timestep + 1}/{self.num_timesteps}")
+            print(f"Error: {e}")
+            print("Saving partial results...")
             
-            # Step 3: Update opinions using mathematical framework
-            X_current = self._get_opinion_matrix()
-            A_current = self.network.get_adjacency_matrix()
+            partial_results = self._get_partial_simulation_results()
+            partial_results['error'] = str(e)
+            partial_results['interrupted_at_timestep'] = self.current_timestep + 1
+            partial_results['completed_timesteps'] = len(self.mean_opinions)
+            partial_results['total_timesteps'] = self.num_timesteps
             
-            # Use self-interpretations directly (no diagonal extraction needed)
-            X_interpreted = np.array(self_interpretations)
-            X_next = update_opinions(X_interpreted, A_current, self.epsilon)
-            
-            # Step 4: Update agent opinions
-            self._update_agent_opinions(X_next)
-            
-            # Step 5: Update network topology based on opinion similarity
-            A_next = update_edges(A_current, X_next, self.theta, self.epsilon)
-            self.network.update_adjacency_matrix(A_next)
-            
-            # Step 6: Store current state
-            self._store_current_state(posts, self_interpretations)
+            return partial_results
+    
+    def _get_partial_simulation_results(self) -> Dict[str, Any]:
+        """
+        Get partial simulation results when simulation is interrupted.
         
-        self.is_running = False
-        
-        return self._get_simulation_results()
+        Returns:
+            Dictionary containing partial simulation results
+        """
+        return {
+            'opinion_history': [op.tolist() for op in self.opinion_history],
+            'mean_opinions': self.mean_opinions,
+            'std_opinions': self.std_opinions,
+            'posts_history': self.posts_history,
+            'interpretations_history': self.interpretations_history,
+            'final_opinions': self._get_opinion_matrix().tolist(),
+            'final_adjacency': self.network.get_adjacency_matrix().tolist(),
+            'simulation_params': {
+                'n_agents': self.n_agents,
+                'num_timesteps': self.num_timesteps,
+                'epsilon': self.epsilon,
+                'theta': self.theta,
+                'initial_connection_probability': self.initial_connection_probability
+            },
+            'random_seed': self.random_seed,
+            'topics': self.topics,
+            'is_partial': True
+        }
     
     def _get_opinion_matrix(self) -> np.ndarray:
         """

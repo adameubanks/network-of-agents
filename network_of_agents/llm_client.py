@@ -125,16 +125,38 @@ class LLMClient:
         Returns:
             Generated text
         """
-        try:
-            response = litellm.completion(
-                model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=temperature if temperature is not None else 0.7
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            raise Exception(f"LLM generation failed: {e}")
+        max_retries = 3
+        base_delay = 1  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                response = litellm.completion(
+                    model=self.model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature if temperature is not None else 0.7
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                error_str = str(e).lower()
+                
+                # Check if it's a rate limit error
+                if 'rate limit' in error_str or 'quota' in error_str or '429' in error_str:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)  # Exponential backoff
+                        print(f"Rate limit hit, waiting {delay} seconds before retry {attempt + 1}/{max_retries}")
+                        import time
+                        time.sleep(delay)
+                        continue
+                    else:
+                        print(f"Rate limit error after {max_retries} retries: {e}")
+                        raise Exception(f"Rate limit exceeded after {max_retries} retries: {e}")
+                else:
+                    # For non-rate-limit errors, don't retry
+                    raise Exception(f"LLM generation failed: {e}")
+        
+        # This should never be reached, but just in case
+        raise Exception("LLM generation failed after all retries")
     
 
     
@@ -152,23 +174,49 @@ class LLMClient:
         """
         messages = [[{"role": "user", "content": prompt}] for prompt in prompts]
         
-        responses = litellm.batch_completion(
-            model=self.model_name,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            max_workers=min(len(messages), self.max_workers),
-            timeout=self.timeout
-        )
+        max_retries = 3
+        base_delay = 1  # seconds
         
-        results = []
-        for response in responses:
-            if hasattr(response, 'choices') and len(response.choices) > 0:
-                results.append(response.choices[0].message.content)
-            else:
-                raise Exception("LLM response missing choices")
+        for attempt in range(max_retries):
+            try:
+                responses = litellm.batch_completion(
+                    model=self.model_name,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    max_workers=min(len(messages), self.max_workers),
+                    timeout=self.timeout
+                )
+                
+                results = []
+                for response in responses:
+                    if hasattr(response, 'choices') and len(response.choices) > 0:
+                        results.append(response.choices[0].message.content)
+                    else:
+                        raise Exception("LLM response missing choices")
+                
+                return results
+                
+            except Exception as e:
+                error_str = str(e).lower()
+                
+                # Check if it's a rate limit error
+                if 'rate limit' in error_str or 'quota' in error_str or '429' in error_str:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)  # Exponential backoff
+                        print(f"Rate limit hit in batch processing, waiting {delay} seconds before retry {attempt + 1}/{max_retries}")
+                        import time
+                        time.sleep(delay)
+                        continue
+                    else:
+                        print(f"Rate limit error in batch processing after {max_retries} retries: {e}")
+                        raise Exception(f"Rate limit exceeded in batch processing after {max_retries} retries: {e}")
+                else:
+                    # For non-rate-limit errors, don't retry
+                    raise Exception(f"Batch LLM processing failed: {e}")
         
-        return results
+        # This should never be reached, but just in case
+        raise Exception("Batch LLM processing failed after all retries")
     
     def _parse_opinion_response(self, response: str) -> float:
         """

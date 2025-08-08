@@ -1,9 +1,9 @@
 {
   "simulation": {
-    "n_agents": 5,
+    "n_agents": 50,
     "epsilon": 0.001,
     "theta": 7,
-    "num_timesteps": 5,
+    "num_timesteps": 50,
     "initial_connection_probability": 0.2,
     "random_seed": 42
   },
@@ -18,7 +18,10 @@
     }
   },
   "topics": [
-    "mormons"
+    "liberals",
+    "conservatives",
+    "queer persons",
+    "gay people"
   ],
   "output": {
     "save_results": true,
