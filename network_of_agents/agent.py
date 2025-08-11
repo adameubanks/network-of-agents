@@ -12,21 +12,18 @@ class Agent:
     Represents an individual agent in the social network.
     """
     
-    def __init__(self, agent_id: int):
+    def __init__(self, agent_id: int, random_seed: Optional[int] = None):
         """
         Initialize an agent.
         
         Args:
             agent_id: Unique identifier for the agent
+            random_seed: Random seed for reproducible opinion generation
         """
         self.agent_id = agent_id
         
         # Initialize with random opinion
         self.current_opinion = np.random.uniform(-1, 1)
-
-        # Set random seed for consistency (but don't affect numpy)
-        import random as python_random
-        python_random.seed(agent_id)
     
     def generate_post_prompt(self, topic: str) -> str:
         """

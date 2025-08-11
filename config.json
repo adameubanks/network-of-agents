@@ -1,9 +1,9 @@
 {
   "simulation": {
-    "n_agents": 50,
+    "n_agents": 10,
     "epsilon": 0.001,
     "theta": 7,
-    "num_timesteps": 50,
+    "num_timesteps": 10,
     "initial_connection_probability": 0.2,
     "random_seed": 42
   },
@@ -20,8 +20,8 @@
   },
   "noise": {
     "enabled": true,
-    "mean": 1.0,
-    "std": 1.0,
+    "mean": 0.0,
+    "std": 0.5,
     "clip": true
   },
   "topics": [

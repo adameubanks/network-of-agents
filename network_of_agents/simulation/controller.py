@@ -49,10 +49,6 @@ class Controller:
             generation_temperature: Temperature for post generation (default: 0.9)
             rating_temperature: Temperature for opinion rating (default: 0.1)
         """
-        # Set random seed if provided
-        if random_seed is not None:
-            np.random.seed(random_seed)
-        
         self.n_agents = n_agents
         self.epsilon = epsilon
         self.theta = theta
@@ -73,6 +69,9 @@ class Controller:
         if self.llm_enabled and self.llm_client is not None:
             self.llm_client.generation_temperature = generation_temperature
             self.llm_client.rating_temperature = rating_temperature
+        
+        if random_seed is not None:
+            np.random.seed(random_seed)
         
         # Initialize components
         self.network = NetworkModel(n_agents, initial_connection_probability, random_seed)
@@ -101,7 +100,7 @@ class Controller:
         # Create agents with random opinions
         for i in range(self.n_agents):
             # Create agent with random opinion
-            agent = Agent(agent_id=i)
+            agent = Agent(agent_id=i, random_seed=self.random_seed)
             agents.append(agent)
         
         return agents

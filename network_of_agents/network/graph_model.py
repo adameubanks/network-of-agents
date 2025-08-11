@@ -25,10 +25,6 @@ class NetworkModel:
         self.initial_connection_probability = initial_connection_probability
         self.random_seed = random_seed
         
-        # Set random seed if provided
-        if random_seed is not None:
-            np.random.seed(random_seed)
-            
         self.adjacency_matrix = self._initialize_adjacency_matrix()
         self.network_history = []
     
