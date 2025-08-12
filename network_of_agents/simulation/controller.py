@@ -161,8 +161,8 @@ class Controller:
                 # Compute next opinions in math domain
                 X_next_math = update_opinions(X_for_math, A_current, self.epsilon)
 
-                # Step 4: Update network topology based on opinion similarity using math-domain opinions
-                A_next = update_edges(A_current, X_next_math, self.theta, self.epsilon)
+                # Step 4: Update network topology A[k+1] based on X[k] (math-domain opinions)
+                A_next = update_edges(A_current, X_for_math, self.theta, self.epsilon)
                 self.network.update_adjacency_matrix(A_next)
 
                 # Step 5: Convert back to agent domain [-1, 1] and update agent opinions
