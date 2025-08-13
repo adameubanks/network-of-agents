@@ -115,7 +115,6 @@ def update_opinions(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndar
     """
     W_k = calculate_W(X_k, A_k, epsilon)
     X_next = np.dot(W_k, X_k)
-    #X_next = np.clip(X_next, -1.0, 1.0)
     
     return X_next
 

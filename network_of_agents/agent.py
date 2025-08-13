@@ -68,7 +68,7 @@ Keep it under 800 characters.
         Args:
             new_opinion: New opinion value (-1 to 1)
         """
-        self.current_opinion = new_opinion #np.clip(new_opinion, -1.0, 1.0)
+        self.current_opinion = new_opinion
     
     def get_opinion(self) -> float:
         """
