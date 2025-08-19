@@ -179,6 +179,3 @@ def update_edges(A_k: np.ndarray, X_k: np.ndarray, theta: int, epsilon: float) -
                     A_next[j, i] = 0
     
     return A_next
-
-
- 

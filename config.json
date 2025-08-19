@@ -3,9 +3,9 @@
     "n_agents": 10,
     "epsilon": 0.001,
     "theta": 7,
-    "num_timesteps": 100,
+    "num_timesteps": 100000,
     "initial_connection_probability": 0.2,
-    "random_seed": 42
+    "random_seed": 3
   },
   "llm": {
     "enabled": false,

@@ -1,5 +1,5 @@
 """
-Core mathematical framework for the network of agents simulation.
+Core mathematical functions for the network of agents simulation.
 """
 
 from .mathematics import (
@@ -9,7 +9,7 @@ from .mathematics import (
     calculate_W,
     update_opinions,
     calculate_S_hat,
-    update_edges,
+    update_edges
 )
 
 __all__ = [
@@ -19,5 +19,5 @@ __all__ = [
     "calculate_W",
     "update_opinions",
     "calculate_S_hat",
-    "update_edges",
+    "update_edges"
 ] 

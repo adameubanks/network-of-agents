@@ -164,62 +164,23 @@ def run_simulations_iteratively(config: Dict[str, Any], random_seed: Optional[in
         random_seed: Override random seed from config
         
     Returns:
-        Dictionary containing results for all topics
+        Results for all topics
     """
-    topics = config.get('topics', ['Climate Change'])
+    topics = config.get('topics', ['default topic'])
     all_results = {}
-    
-    print("=" * 50)
-    print("RUNNING SIMULATIONS FOR ALL TOPICS")
-    print("=" * 50)
     
     for i, topic in enumerate(topics):
         print(f"\nTopic {i+1}/{len(topics)}: {topic}")
         print("-" * 30)
         
-        results = run_simulation(config, topic, random_seed)
-        all_results[topic] = results
+        try:
+            results = run_simulation(config, topic, random_seed)
+            all_results[topic] = results
+        except Exception as e:
+            print(f"Error simulating topic '{topic}': {e}")
+            all_results[topic] = {'error': str(e)}
     
     return all_results
-
-
-def analyze_topic_convergence(results: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Analyze convergence for a single topic.
-    
-    Args:
-        results: Simulation results for one topic
-        
-    Returns:
-        Convergence analysis
-    """
-    if 'error' in results:
-        return {'error': results['error']}
-    
-    mean_opinions = results['mean_opinions']
-    std_opinions = results['std_opinions']
-    
-    # Check for convergence in last 10 timesteps
-    if len(mean_opinions) > 10:
-        recent_mean = mean_opinions[-10:]
-        recent_std = std_opinions[-10:]
-        mean_change = max(recent_mean) - min(recent_mean)
-        std_change = max(recent_std) - min(recent_std)
-        
-        converged = mean_change < 0.01 and std_change < 0.01
-        
-        return {
-            'initial_mean': mean_opinions[0],
-            'final_mean': mean_opinions[-1],
-            'initial_std': std_opinions[0],
-            'final_std': std_opinions[-1],
-            'mean_change_last_10': mean_change,
-            'std_change_last_10': std_change,
-            'converged': converged,
-            'convergence_timestep': len(mean_opinions) if converged else None
-        }
-    
-    return {'error': 'Not enough timesteps for convergence analysis'}
 
 
 def compare_topics(all_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -234,19 +195,17 @@ def compare_topics(all_results: Dict[str, Any]) -> Dict[str, Any]:
     """
     comparison = {
         'topics_analyzed': len(all_results),
-        'converged_topics': 0,
         'failed_topics': 0,
         'topic_analyses': {}
     }
     
     for topic, results in all_results.items():
-        analysis = analyze_topic_convergence(results)
-        comparison['topic_analyses'][topic] = analysis
-        
-        if 'error' in analysis:
+        if 'error' in results:
             comparison['failed_topics'] += 1
-        elif analysis.get('converged', False):
-            comparison['converged_topics'] += 1
+        
+        comparison['topic_analyses'][topic] = {
+            'status': 'error' if 'error' in results else 'success'
+        }
     
     return comparison
 
@@ -334,20 +293,6 @@ def main():
         else:
             print(f"✅ COMPLETE RESULTS - Simulation finished successfully")
         
-        # Analyze convergence (only if we have enough data)
-        if len(results.get('mean_opinions', [])) > 1:
-            analysis = analyze_topic_convergence(results)
-            if 'error' not in analysis:
-                print(f"\nConvergence Analysis:")
-                print(f"  Initial mean opinion: {analysis['initial_mean']:.3f}")
-                print(f"  Final mean opinion: {analysis['final_mean']:.3f}")
-                print(f"  Initial std dev: {analysis['initial_std']:.3f}")
-                print(f"  Final std dev: {analysis['final_std']:.3f}")
-                if not is_partial:  # Only show convergence metrics for complete runs
-                    print(f"  Mean change in last 10 timesteps: {analysis['mean_change_last_10']:.3f}")
-                    print(f"  Std dev change in last 10 timesteps: {analysis['std_change_last_10']:.3f}")
-                    print(f"  Converged: {'Yes' if analysis['converged'] else 'No'}")
-        
         # Print detailed summary
         print_simulation_summary(results)
         
@@ -372,7 +317,6 @@ def main():
         comparison = compare_topics(all_results)
         
         print(f"Topics analyzed: {comparison['topics_analyzed']}")
-        print(f"Topics converged: {comparison['converged_topics']}")
         print(f"Topics failed: {comparison['failed_topics']}")
         
         print("\nDetailed Topic Analysis:")
@@ -382,9 +326,7 @@ def main():
             if 'error' in analysis:
                 print(f"  Error: {analysis['error']}")
             else:
-                print(f"  Initial mean: {analysis['initial_mean']:.3f}")
-                print(f"  Final mean: {analysis['final_mean']:.3f}")
-                print(f"  Converged: {'Yes' if analysis['converged'] else 'No'}")
+                print(f"  Status: Success")
         
         # Save data and generate plots for each topic
         for topic, results in all_results.items():
