@@ -90,6 +90,8 @@ def calculate_W(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
         X_k_2d = X_k
     
     SN_Xk = calculate_SN(X_k_2d, epsilon)
+    # Apply epsilon as minimum threshold to prevent edge weights from becoming too small
+    SN_Xk = np.maximum(SN_Xk, epsilon)
     W_temp = SN_Xk * A_k
     
     row_sums_W_temp = W_temp.sum(axis=1)
