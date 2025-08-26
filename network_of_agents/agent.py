@@ -79,7 +79,7 @@ Keep it under 800 characters.
         """
         return self.current_opinion 
 
-    def interpret_single_post_prompt(self, post: str, topic: str) -> str:
+    def interpret_post_prompt(self, post: str, topic: str) -> str:
         """
         Generate agent-specific interpretation prompt for a single post.
         
@@ -91,7 +91,7 @@ Keep it under 800 characters.
             Agent-specific interpretation prompt
         """
         prompt = f"""
-Analyze the following detailed post about {topic} and provide a single opinion value.
+Analyze the following post about {topic} and provide a single opinion value.
 
 Consider the overall sentiment, reasoning, qualifications, and context expressed in the post.
 Use 2-3 decimal places for precision. Examples of opinion ratings:

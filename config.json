@@ -3,20 +3,14 @@
     "n_agents": 10,
     "epsilon": 0.001,
     "theta": 7,
-    "num_timesteps": 100,
+    "num_timesteps": 50,
     "initial_connection_probability": 0.2,
     "random_seed": 42
   },
   "llm": {
-    "enabled": true,
+    "enabled": false,
     "api_key_env": "OPENAI_API_KEY",
-    "model_name": "gpt-4o",
-    "generation_temperature": 0.9,
-    "rating_temperature": 0.3,
-    "batch": {
-      "max_workers": 50,
-      "timeout": 600
-    }
+    "model_name": "gpt-4o-mini"
   },
   "noise": {
     "enabled": false,
@@ -25,8 +19,7 @@
     "clip": true
   },
   "topics": [
-    "Israel's shutdown of the Gaza Strip",
-    "pineapple on pizza"
+    "test topic"
   ],
   "output": {
     "save_results": true,

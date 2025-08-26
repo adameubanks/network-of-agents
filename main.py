@@ -7,6 +7,7 @@ import os
 from typing import Dict, Any, Optional, List
 import time
 from datetime import datetime
+import logging
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -30,6 +31,30 @@ def load_config(config_path: str = "config.json") -> Dict[str, Any]:
         return json.load(f)
 
 
+def _resolve_logging_level(level_str: Optional[str]) -> int:
+    if not level_str:
+        return logging.WARNING
+    mapping = {
+        'DEBUG': logging.DEBUG,
+        'INFO': logging.INFO,
+        'WARNING': logging.WARNING,
+        'ERROR': logging.ERROR,
+        'CRITICAL': logging.CRITICAL,
+    }
+    return mapping.get(level_str.upper(), logging.WARNING)
+
+
+def configure_logging(config: Dict[str, Any]) -> None:
+    """Configure global logging once, keeping console output minimal."""
+    cfg = config.get('logging', {}) if isinstance(config, dict) else {}
+    level = _resolve_logging_level(cfg.get('level'))
+    logging.basicConfig(level=level, format='%(message)s')
+    # Silence noisy third-party loggers
+    for name in [
+        'LiteLLM', 'litellm', 'httpx', 'httpcore', 'openai', 'urllib3'
+    ]:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
 def create_llm_client(config: Dict[str, Any]) -> Optional[LLMClient]:
     """
     Create LLM client from configuration.
@@ -52,17 +77,8 @@ def create_llm_client(config: Dict[str, Any]) -> Optional[LLMClient]:
     
     # Get model configuration
     model_name = llm_config.get('model_name')
-    
-    # Get batch configuration
-    batch_config = llm_config.get('batch', {})
-    
-    # Get temperature configuration
-    generation_temperature = llm_config.get('generation_temperature', 0.9)
-    rating_temperature = llm_config.get('rating_temperature', 0.1)
-    
-    return LLMClient(api_key=api_key, model_name=model_name, batch_config=batch_config, 
-                    generation_temperature=generation_temperature, 
-                    rating_temperature=rating_temperature)
+        
+    return LLMClient(api_key=api_key, model_name=model_name)
 
 
 def run_simulation(config: Dict[str, Any], topic: str, 
@@ -93,13 +109,35 @@ def run_simulation(config: Dict[str, Any], topic: str,
     if random_seed is None:
         random_seed = sim_config.get('random_seed')
     
-    # Get temperature settings
-    generation_temperature = llm_config.get('generation_temperature', 0.9)
-    rating_temperature = llm_config.get('rating_temperature', 0.1)
+
     
     # Create LLM client
     llm_client = create_llm_client(config)
     
+    # Setup per-run snapshot naming
+    results_dir = config.get('output', {}).get('results_directory', 'results')
+    os.makedirs(results_dir, exist_ok=True)
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    n_agents = sim_config['n_agents']
+    num_timesteps = sim_config['num_timesteps']
+    if not llm_enabled:
+        noise_cfg = config.get('noise', {})
+        model_name = 'no-llm-noise' if noise_cfg.get('enabled', False) else 'no-llm'
+    else:
+        model_name = llm_config.get('model_name', 'unknown')
+    topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
+
+    def on_timestep(snapshot: Dict[str, Any], timestep_index: int) -> None:
+        # Respect config: only save if enabled
+        output_cfg = config.get('output', {})
+        if not output_cfg.get('save_results', True):
+            return
+        # Ensure topic present for downstream consumers
+        snapshot['topic'] = topic
+        # Compose filename and save
+        filename = f"{results_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_timestep_{timestep_index:03d}.json"
+        save_simulation_data(snapshot, filename, config)
+
     # Create controller with single topic
     controller = Controller(
         n_agents=sim_config['n_agents'],
@@ -110,19 +148,19 @@ def run_simulation(config: Dict[str, Any], topic: str,
         llm_client=llm_client,
         topics=[topic],  # Single topic only
         random_seed=random_seed,
-        generation_temperature=generation_temperature,
-        rating_temperature=rating_temperature,
+
         llm_enabled=llm_enabled,
         noise_enabled=noise_enabled,
         noise_mean=noise_mean,
         noise_std=noise_std,
-        noise_clip=noise_clip
+        noise_clip=noise_clip,
+        on_timestep=on_timestep
     )
     
     # Run simulation
     print(f"Starting simulation for topic: {topic}")
     if llm_enabled:
-        print(f"Mode: LLM (model={llm_config.get('model_name')}, gen_T={generation_temperature}, rate_T={rating_temperature})")
+        print(f"Mode: LLM (model={llm_config.get('model_name')})")
     else:
         print(f"Mode: NO-LLM (noise={'on' if noise_enabled else 'off'}, mean={noise_mean}, std={noise_std}, clip={noise_clip})")
     print(f"Initial opinions: {[agent.get_opinion() for agent in controller.agents]}")
@@ -264,6 +302,9 @@ def main():
         print(f"Error: Invalid JSON in configuration file: {e}")
         return
     
+    # Configure logging
+    configure_logging(config)
+
     # Run simulation
     print("=" * 50)
     print("OPINION DYNAMICS SIMULATION")

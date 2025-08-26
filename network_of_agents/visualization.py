@@ -116,6 +116,8 @@ def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[s
         save_data['posts_history'] = results['posts_history']
     if 'interpretations_history' in results:
         save_data['interpretations_history'] = results['interpretations_history']
+    if 'timesteps' in results:
+        save_data['timesteps'] = results['timesteps']
     
     # Add partial result information if applicable
     if results.get('is_partial', False):
