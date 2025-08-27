@@ -14,7 +14,7 @@ load_dotenv()
 
 from network_of_agents.simulation.controller import Controller
 from network_of_agents.llm_client import LLMClient
-from network_of_agents.visualization import plot_opinion_evolution, save_simulation_data, print_simulation_summary
+from network_of_agents.visualization import save_simulation_data, print_simulation_summary, plot_mean_std, plot_individual_opinions, plot_network_snapshots, render_network_video_from_results
 
 
 def load_config(config_path: str = "config.json") -> Dict[str, Any]:
@@ -45,15 +45,13 @@ def _resolve_logging_level(level_str: Optional[str]) -> int:
 
 
 def configure_logging(config: Dict[str, Any]) -> None:
-    """Configure global logging once, keeping console output minimal."""
-    cfg = config.get('logging', {}) if isinstance(config, dict) else {}
-    level = _resolve_logging_level(cfg.get('level'))
-    logging.basicConfig(level=level, format='%(message)s')
-    # Silence noisy third-party loggers
+    """Configure global logging to be concise."""
+    logging.basicConfig(level=logging.WARNING, format='%(message)s')
+    # Silence noisy third-party loggers further
     for name in [
         'LiteLLM', 'litellm', 'httpx', 'httpcore', 'openai', 'urllib3'
     ]:
-        logging.getLogger(name).setLevel(logging.WARNING)
+        logging.getLogger(name).setLevel(logging.ERROR)
 
 def create_llm_client(config: Dict[str, Any]) -> Optional[LLMClient]:
     """
@@ -115,7 +113,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
     llm_client = create_llm_client(config)
     
     # Setup per-run snapshot naming
-    results_dir = config.get('output', {}).get('results_directory', 'results')
+    results_dir = 'results'
     os.makedirs(results_dir, exist_ok=True)
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     n_agents = sim_config['n_agents']
@@ -127,16 +125,23 @@ def run_simulation(config: Dict[str, Any], topic: str,
         model_name = llm_config.get('model_name', 'unknown')
     topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
 
+    # Per-topic directory
+    topic_dir = f"{results_dir}/{topic_safe}"
+    os.makedirs(topic_dir, exist_ok=True)
+
+    # Single per-run file targets (inside topic folder)
+    run_data_path = f"{topic_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}.json"
+    run_plot_mean_path = f"{topic_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_mean_std.png"
+    run_plot_individuals_path = f"{topic_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_individuals.png"
+    # Video output directory and prefix (write MP4 directly to topic folder)
+    graph_dir = topic_dir
+    run_plot_graph_prefix = f"{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_graph"
+
     def on_timestep(snapshot: Dict[str, Any], timestep_index: int) -> None:
-        # Respect config: only save if enabled
-        output_cfg = config.get('output', {})
-        if not output_cfg.get('save_results', True):
-            return
         # Ensure topic present for downstream consumers
         snapshot['topic'] = topic
-        # Compose filename and save
-        filename = f"{results_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_timestep_{timestep_index:03d}.json"
-        save_simulation_data(snapshot, filename, config)
+        # Save to a single per-run file, updating it each timestep
+        save_simulation_data(snapshot, run_data_path, config)
 
     # Create controller with single topic
     controller = Controller(
@@ -144,7 +149,6 @@ def run_simulation(config: Dict[str, Any], topic: str,
         epsilon=sim_config.get('epsilon', 0.001),
         theta=sim_config.get('theta', 7),
         num_timesteps=sim_config['num_timesteps'],
-        initial_connection_probability=sim_config['initial_connection_probability'],
         llm_client=llm_client,
         topics=[topic],  # Single topic only
         random_seed=random_seed,
@@ -187,8 +191,13 @@ def run_simulation(config: Dict[str, Any], topic: str,
     print(f"Final opinion std dev for '{topic}': {final_std:.3f}")
     print(f"Final opinions: {[f'{op:.3f}' for op in final_opinions]}")
     
-    # Add topic to results
+    # Add topic and run paths to results
     results['topic'] = topic
+    results['run_data_path'] = run_data_path
+    results['run_plot_mean_path'] = run_plot_mean_path
+    results['run_plot_individuals_path'] = run_plot_individuals_path
+    results['run_graph_dir'] = graph_dir
+    results['run_plot_graph_prefix'] = run_plot_graph_prefix
     
     return results
 
@@ -261,7 +270,7 @@ def generate_default_filenames(topic: str, config: Dict[str, Any], is_partial: b
         Tuple of (data_filename, plot_filename)
     """
     # Create results directory if it doesn't exist
-    results_dir = config.get('output', {}).get('results_directory', 'results')
+    results_dir = 'results'
     os.makedirs(results_dir, exist_ok=True)
     
     # Generate timestamp
@@ -310,73 +319,67 @@ def main():
     print("OPINION DYNAMICS SIMULATION")
     print("=" * 50)
     
-    # Check if single topic is specified in config
-    single_topic = config.get('single_topic')
-    
-    if single_topic is not None:
-        # Run single topic simulation
-        results = run_simulation(config, single_topic, random_seed=None)
-        
-        print("\n" + "=" * 50)
-        print("SIMULATION COMPLETED")
-        print("=" * 50)
-        print(f"Topic: {results['topic']}")
-        print(f"Agents: {results['simulation_params']['n_agents']}")
-        print(f"Timesteps: {results['simulation_params']['num_timesteps']}")
-        print(f"Random seed: {results['random_seed']}")
-        
-        # Check if results are partial
-        is_partial = results.get('is_partial', False)
-        if is_partial:
-            print(f"⚠️  PARTIAL RESULTS - Simulation was interrupted")
-            print(f"   Completed: {results.get('completed_timesteps', 0)}/{results.get('total_timesteps', 0)} timesteps")
-            print(f"   Error: {results.get('error', 'Unknown error')}")
+    # Always run all topics iteratively
+    all_results = run_simulations_iteratively(config, random_seed=None)
+
+    print("\n" + "=" * 50)
+    print("ALL TOPICS SIMULATION COMPLETED")
+    print("=" * 50)
+
+    # Compare topics
+    comparison = compare_topics(all_results)
+
+    print(f"Topics analyzed: {comparison['topics_analyzed']}")
+    print(f"Topics failed: {comparison['failed_topics']}")
+
+    print("\nDetailed Topic Analysis:")
+    print("-" * 30)
+    for topic, analysis in comparison['topic_analyses'].items():
+        print(f"\nTopic: {topic}")
+        if 'error' in analysis:
+            print(f"  Error: {analysis['error']}")
         else:
-            print(f"✅ COMPLETE RESULTS - Simulation finished successfully")
-        
-        # Print detailed summary
-        print_simulation_summary(results)
-        
-        # Determine save paths
-        data_path, plot_path = generate_default_filenames(results['topic'], config, is_partial=is_partial)
-        
-        # Save data if requested
-        save_simulation_data(results, data_path, config)
-        
-        # Generate and save plot if requested
-        plot_opinion_evolution(results, save_path=plot_path)
-        
-    else:
-        # Run all topics iteratively
-        all_results = run_simulations_iteratively(config, random_seed=None)
-        
-        print("\n" + "=" * 50)
-        print("ALL TOPICS SIMULATION COMPLETED")
-        print("=" * 50)
-        
-        # Compare topics
-        comparison = compare_topics(all_results)
-        
-        print(f"Topics analyzed: {comparison['topics_analyzed']}")
-        print(f"Topics failed: {comparison['failed_topics']}")
-        
-        print("\nDetailed Topic Analysis:")
-        print("-" * 30)
-        for topic, analysis in comparison['topic_analyses'].items():
-            print(f"\nTopic: {topic}")
-            if 'error' in analysis:
-                print(f"  Error: {analysis['error']}")
-            else:
-                print(f"  Status: Success")
-        
-        # Save data and generate plots for each topic
-        for topic, results in all_results.items():
-            if 'error' not in results:
-                is_partial = results.get('is_partial', False)
-                data_path, plot_path = generate_default_filenames(topic, config, is_partial=is_partial)
-                save_simulation_data(results, data_path, config)
-                
-                plot_opinion_evolution(results, save_path=plot_path)
+            print(f"  Status: Success")
+
+    # Save data and generate plots for each topic
+    for topic, results in all_results.items():
+        if 'error' not in results:
+            # Prefer per-run paths from each run; fallback to generated names if absent
+            data_path = results.get('run_data_path')
+            plot_mean_path = results.get('run_plot_mean_path')
+            plot_individuals_path = results.get('run_plot_individuals_path')
+            # Prefer graph dir and prefix from results if present
+            graph_dir_local = results.get('run_graph_dir')
+            run_plot_graph_prefix_local = results.get('run_plot_graph_prefix')
+            if not data_path or not plot_mean_path or not plot_individuals_path or not graph_dir_local or not run_plot_graph_prefix_local:
+                # Fallback: reconstruct topic_dir and paths
+                llm_cfg = config.get('llm', {})
+                llm_on = llm_cfg.get('enabled', True)
+                if not llm_on:
+                    noise_cfg = config.get('noise', {})
+                    model = 'no-llm-noise' if noise_cfg.get('enabled', False) else 'no-llm'
+                else:
+                    model = llm_cfg.get('model_name', 'unknown')
+                sim_cfg = config['simulation']
+                n = sim_cfg['n_agents']
+                T = sim_cfg['num_timesteps']
+                topic_safe_local = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
+                results_dir_local = 'results'
+                topic_dir_local = f"{results_dir_local}/{topic_safe_local}"
+                os.makedirs(topic_dir_local, exist_ok=True)
+                if not graph_dir_local:
+                    graph_dir_local = topic_dir_local
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                data_path = data_path or f"{topic_dir_local}/{topic_safe_local}_{n}_{T}_{model}_{timestamp}.json"
+                plot_mean_path = plot_mean_path or f"{topic_dir_local}/{topic_safe_local}_{n}_{T}_{model}_{timestamp}_mean_std.png"
+                plot_individuals_path = plot_individuals_path or f"{topic_dir_local}/{topic_safe_local}_{n}_{T}_{model}_{timestamp}_individuals.png"
+                run_plot_graph_prefix_local = run_plot_graph_prefix_local or f"{topic_safe_local}_{n}_{T}_{model}_{timestamp}_graph"
+            save_simulation_data(results, data_path, config)
+            plot_mean_std(results, save_path=plot_mean_path)
+            plot_individual_opinions(results, save_path=plot_individuals_path)
+            # Graph snapshots per timestep
+            # Render video directly from results (no PNGs). 0.5s per frame (fps=2)
+            render_network_video_from_results(results, graph_dir=graph_dir_local, file_prefix=run_plot_graph_prefix_local, fps=2)
 
 
 if __name__ == "__main__":

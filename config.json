@@ -1,16 +1,16 @@
 {
   "simulation": {
-    "n_agents": 10,
-    "epsilon": 0.001,
+    "n_agents": 50,
+    "epsilon": 0.01,
     "theta": 7,
-    "num_timesteps": 50,
-    "initial_connection_probability": 0.2,
+    "num_timesteps": 100,
+    
     "random_seed": 42
   },
   "llm": {
     "enabled": false,
     "api_key_env": "OPENAI_API_KEY",
-    "model_name": "gpt-4o-mini"
+    "model_name": "gpt-5-nano"
   },
   "noise": {
     "enabled": false,
@@ -20,12 +20,6 @@
   },
   "topics": [
     "test topic"
-  ],
-  "output": {
-    "save_results": true,
-    "generate_plots": true,
-    "results_directory": "results",
-    "filename_pattern": "descriptive"
-  }
+  ]
 }
 

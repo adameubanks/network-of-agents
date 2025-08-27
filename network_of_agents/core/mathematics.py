@@ -74,7 +74,8 @@ def calculate_SN(M: np.ndarray, epsilon: float) -> np.ndarray:
 
 def calculate_W(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
     """
-    Calculate weighting matrix W(X[k], A[k]) := SN(X[k]) ◦ A[k] + (I - diag([SN(X[k]) ◦ A[k]]1))
+    Calculate weighting matrix per Eq. (2):
+    W(X[k], A[k]) := SN(X[k]) ◦ A[k] + (I - diag([SN(X[k]) ◦ A[k]]1))
     
     Args:
         X_k: Opinion vector at time k (single topic)
@@ -90,8 +91,6 @@ def calculate_W(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
         X_k_2d = X_k
     
     SN_Xk = calculate_SN(X_k_2d, epsilon)
-    # Apply epsilon as minimum threshold to prevent edge weights from becoming too small
-    SN_Xk = np.maximum(SN_Xk, epsilon)
     W_temp = SN_Xk * A_k
     
     row_sums_W_temp = W_temp.sum(axis=1)
@@ -100,6 +99,9 @@ def calculate_W(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
     diag_correction = np.diag(row_sums_W_temp)
     
     W_Xk_Ak = W_temp + (identity_matrix - diag_correction)
+    # Lightweight sanity check: W should be row-stochastic within tolerance
+    row_sums = W_Xk_Ak.sum(axis=1)
+    assert np.allclose(row_sums, np.ones_like(row_sums), atol=1e-8), "W is not row-stochastic within tolerance"
     return W_Xk_Ak
 
 
@@ -144,40 +146,48 @@ def calculate_S_hat(X_k: np.ndarray, theta: int, epsilon: float) -> np.ndarray:
     return S_hat_k
 
 
-def update_edges(A_k: np.ndarray, X_k: np.ndarray, theta: int, epsilon: float) -> np.ndarray:
+def update_edges(A_k: np.ndarray, X_k: np.ndarray, theta: int, epsilon: float, update_probability: float = 1.0) -> np.ndarray:
     """
-    Update edges a_ij[k+1] based on probabilistic similarity
-    
+    Lazy edge update per Eq. (4): for each unordered pair (i<j), with
+    probability `update_probability` resample the edge using a single γ; otherwise
+    keep the previous value. Resampling rule:
+    a_ij[k+1] = a_ji[k+1] = 1 if γ < max(ŝ_ij[k], ε) and i ≠ j; else 0.
+
     Args:
         A_k: Adjacency matrix at time k
         X_k: Opinion vector at time k (single topic)
         theta: Positive integer parameter for edge formation
         epsilon: Small positive parameter
-        
+
     Returns:
-        Updated adjacency matrix A[k+1]
+        Updated symmetric, hollow adjacency matrix A[k+1]
     """
     n = A_k.shape[0]
     S_hat_k = calculate_S_hat(X_k, theta, epsilon)
-    
-    A_next = np.zeros((n, n))
-    
-    # Follow the exact mathematical approach from the paper
+
+    # Start from current adjacency and selectively resample edges
+    A_next = A_k.copy()
+
+    # Iterate over unordered pairs (i < j)
     for i in range(n):
-        for j in range(n):
-            if i != j:  # Ensure i ≠ j
-                # Generate single random sample γ ∼ U[0,1]
+        for j in range(i + 1, n):
+            # With probability update_probability, resample this pair per Eq. (4)
+            if np.random.rand() < update_probability:
                 gamma = np.random.rand()
-                # Check condition: γ < max(ŝ_ij[k], ε)
-                threshold = max(S_hat_k[i, j], epsilon)
-                
+                # Use symmetric per-pair probability for undirected edge formation
+                threshold = max(S_hat_k[i, j], S_hat_k[j, i], epsilon)
                 if gamma < threshold:
-                    # Set both a_ij[k+1] = 1 and a_ji[k+1] = 1
                     A_next[i, j] = 1
                     A_next[j, i] = 1
                 else:
-                    # Set both a_ij[k+1] = 0 and a_ji[k+1] = 0
                     A_next[i, j] = 0
                     A_next[j, i] = 0
-    
+
+    # Enforce hollowness explicitly
+    np.fill_diagonal(A_next, 0)
+
+    # Lightweight sanity checks
+    assert np.allclose(A_next, A_next.T), "A_next is not symmetric"
+    assert np.all(np.diag(A_next) == 0), "A_next diagonal is not zero"
+
     return A_next

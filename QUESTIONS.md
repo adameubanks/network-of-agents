@@ -1,0 +1,1 @@
+how are the weights initialized and how are they updated?

@@ -27,7 +27,6 @@ class Controller:
                  epsilon: float = 0.001,
                  theta: int = 3,
                  num_timesteps: int = 50,
-                 initial_connection_probability: float = 0.3,
                  topics: Optional[List[str]] = None,
                  random_seed: Optional[int] = None,
 
@@ -45,7 +44,6 @@ class Controller:
             epsilon: Small positive parameter for numerical stability
             theta: Positive integer parameter for edge formation
             num_timesteps: Number of simulation timesteps
-            initial_connection_probability: Initial probability of connections
             llm_client: LLM client for post generation and interpretation
             topics: List of topics for opinions
             random_seed: Random seed for reproducible results
@@ -55,7 +53,7 @@ class Controller:
         self.epsilon = epsilon
         self.theta = theta
         self.num_timesteps = num_timesteps
-        self.initial_connection_probability = initial_connection_probability
+        # Paper-consistent: no ER init, no lazy update probability
         self.llm_client = llm_client
         self.topics = topics
         self.random_seed = random_seed
@@ -73,8 +71,20 @@ class Controller:
             np.random.seed(random_seed)
         
         # Initialize components
-        self.network = NetworkModel(n_agents, initial_connection_probability, random_seed)
+        self.network = NetworkModel(n_agents, random_seed)
         self.agents = self._initialize_agents()
+
+        # Reinitialize A[0] using Eq.(4) based on initial opinions to avoid discontinuity
+        try:
+            X0_agent = self._get_opinion_matrix()
+            X0_math = self._to_math_domain(X0_agent)
+            # Sample all pairs per Eq.(4)
+            A0 = update_edges(self.network.get_adjacency_matrix(), X0_math, self.theta, self.epsilon, update_probability=1.0)
+            # Set directly without adding ER graph to history
+            self.network.adjacency_matrix = A0
+        except Exception:
+            # If anything fails, keep the initialized ER graph
+            pass
         
         # Simulation state
         self.is_running = False
@@ -148,7 +158,6 @@ class Controller:
             for timestep in iterator:
                 timestep_start_time = time.time()
                 self.current_timestep = timestep
-                logger.info(f"Starting timestep {timestep + 1}/{self.num_timesteps}")
                 
                 # Step 1: Get current network state
                 X_current = self._get_opinion_matrix()
@@ -171,7 +180,6 @@ class Controller:
                 
                 if self.llm_enabled and not self.llm_circuit_open:
                     self.llm_total_calls += 1
-                    logger.info(f"Generating posts for {len(self.agents)} agents on topic: {current_topic}")
                     try:
                         # Prepare prior-timestep neighbor posts (raw text only)
                         if self.posts_history and len(self.posts_history[-1]) == len(self.agents):
@@ -193,9 +201,7 @@ class Controller:
                             logger.error(f"POSTS VALIDATION FAILED: Got {len(posts)} posts, expected {len(self.agents)}")
                             raise ValueError(f"Posts count mismatch: got {len(posts)}, expected {len(self.agents)}")
                         
-                        logger.info(f"Interpreting neighbor posts for {len(self.agents)} agents")
                         neighbor_opinions, individual_ratings = self.llm_client.interpret_neighbor_posts_with_retry(posts, current_topic, self.agents, A_current)
-                        logger.info(f"Interpretations completed. Opinions: {len(neighbor_opinions)}, Ratings: {len(individual_ratings)}")
                         
                         # Validate interpretation data
                         if len(neighbor_opinions) != len(self.agents):
@@ -205,9 +211,7 @@ class Controller:
                         if len(individual_ratings) != len(self.agents):
                             logger.error(f"RATINGS VALIDATION FAILED: Got {len(individual_ratings)} ratings, expected {len(self.agents)}")
                             raise ValueError(f"Ratings count mismatch: got {len(individual_ratings)}, expected {len(self.agents)}")
-                        
-                        logger.info("All LLM data validation passed successfully")
-                        
+                                                
                         # Track success
                         self.llm_success_count += 1
                         
@@ -254,7 +258,7 @@ class Controller:
                 X_next_math = update_opinions(X_for_math, A_current, self.epsilon)
 
                 # Step 4: Update network topology A[k+1] based on X[k] (math-domain opinions)
-                A_next = update_edges(A_current, X_for_math, self.theta, self.epsilon)
+                A_next = update_edges(A_current, X_for_math, self.theta, self.epsilon, update_probability=1.0)
                 self.network.update_adjacency_matrix(A_next)
 
                 # Step 5: Convert back to agent domain [-1, 1] and update agent opinions
@@ -265,10 +269,8 @@ class Controller:
                 if self.llm_enabled:
                     # Additional validation before storing state
                     if posts is not None and neighbor_opinions is not None and individual_ratings is not None:
-                        logger.info(f"Storing LLM state: posts={len(posts)}, opinions={len(neighbor_opinions)}, ratings={len(individual_ratings)}")
                         self._store_current_state(posts, neighbor_opinions, individual_ratings)
                     else:
-                        logger.warning(f"LLM data incomplete, storing minimal state. posts={posts is not None}, opinions={neighbor_opinions is not None}, ratings={individual_ratings is not None}")
                         self._store_current_state(None, None, None, skip_detailed=True)
                 else:
                     self._store_current_state(None, None, None)
@@ -328,7 +330,7 @@ class Controller:
                 'num_timesteps': self.num_timesteps,
                 'epsilon': self.epsilon,
                 'theta': self.theta,
-                'initial_connection_probability': self.initial_connection_probability,
+                # No initial ER probability; full resample each step per Eq.(4)
                 'llm_enabled': self.llm_enabled,
                 'noise_enabled': self.noise_enabled,
                 'noise_mean': self.noise_mean,
@@ -396,13 +398,12 @@ class Controller:
             # Wrap in list for compatibility with existing structure
             self.interpretations_history.append([interpretations])
         
-        # Store detailed agent information for all modes
-        if not skip_detailed:
-            if self.llm_enabled and posts is not None and interpretations is not None and individual_ratings is not None:
-                self._store_detailed_agent_state(posts, interpretations, individual_ratings)
-            else:
-                # For non-LLM mode, store basic agent state without posts
-                self._store_basic_agent_state()
+        # Always store a per-timestep network snapshot
+        if self.llm_enabled and (not skip_detailed) and posts is not None and interpretations is not None and individual_ratings is not None:
+            self._store_detailed_agent_state(posts, interpretations, individual_ratings)
+        else:
+            # Basic snapshot (works for both LLM-skipped and non-LLM modes)
+            self._store_basic_agent_state()
     
     def _store_detailed_agent_state(self, posts: List[str], interpretations: List[float], individual_ratings: List[List[tuple[int, float]]]):
         """Store detailed information about each agent at current timestep."""
@@ -413,9 +414,7 @@ class Controller:
             'timestep': self.current_timestep,
             'agents': []
         }
-        
-        logger.info(f"Storing detailed agent state for {len(self.agents)} agents")
-        
+                
         for i, agent in enumerate(self.agents):
             # Find connected neighbors for this agent
             connections = current_adjacency[i, :]
@@ -439,7 +438,6 @@ class Controller:
             timestep_data['agents'].append(agent_data)
         
         self.timesteps.append(timestep_data)
-        logger.info(f"Detailed agent state stored successfully for timestep {self.current_timestep}")
     
     def _store_basic_agent_state(self):
         """Store basic agent information for non-LLM simulations."""
@@ -450,9 +448,7 @@ class Controller:
             'timestep': self.current_timestep,
             'agents': []
         }
-        
-        logger.info(f"Storing basic agent state for {len(self.agents)} agents")
-        
+                
         for i, agent in enumerate(self.agents):
             # Find connected neighbors for this agent
             connections = current_adjacency[i, :]
@@ -551,7 +547,6 @@ class Controller:
                 'num_timesteps': self.num_timesteps,
                 'epsilon': self.epsilon,
                 'theta': self.theta,
-                'initial_connection_probability': self.initial_connection_probability,
                 'llm_enabled': self.llm_enabled,
                 'noise_enabled': self.noise_enabled,
                 'noise_mean': self.noise_mean,

@@ -12,39 +12,21 @@ class NetworkModel:
     Manages the social network graph structure and provides analysis methods.
     """
     
-    def __init__(self, n_agents: int, initial_connection_probability: float = 0.2, random_seed: Optional[int] = None):
+    def __init__(self, n_agents: int, random_seed: Optional[int] = None):
         """
         Initialize the network model.
         
         Args:
             n_agents: Number of agents in the network
-            initial_connection_probability: Probability of initial connections
             random_seed: Random seed for reproducible results
         """
         self.n_agents = n_agents
-        self.initial_connection_probability = initial_connection_probability
         self.random_seed = random_seed
         
-        self.adjacency_matrix = self._initialize_adjacency_matrix()
+        # Paper-consistent: start with empty adjacency; controller sets A[0] via Eq.(4)
+        self.adjacency_matrix = np.zeros((self.n_agents, self.n_agents))
         self.network_history = []
-    
-    def _initialize_adjacency_matrix(self) -> np.ndarray:
-        """
-        Initialize the adjacency matrix with random connections.
-        
-        Returns:
-            Initial adjacency matrix
-        """
-        A = np.zeros((self.n_agents, self.n_agents))
-        
-        for i in range(self.n_agents):
-            for j in range(i + 1, self.n_agents):
-                if np.random.rand() < self.initial_connection_probability:
-                    A[i, j] = 1
-                    A[j, i] = 1
-        
-        return A
-    
+
 
     
     def get_adjacency_matrix(self) -> np.ndarray:
@@ -101,7 +83,6 @@ class NetworkModel:
         """
         return {
             'n_agents': self.n_agents,
-            'initial_connection_probability': self.initial_connection_probability,
             'adjacency_matrix': self.adjacency_matrix.tolist(),
             'network_history': [adj.tolist() for adj in self.network_history]
         }
@@ -118,8 +99,7 @@ class NetworkModel:
             Network model instance
         """
         network = cls(
-            n_agents=data['n_agents'],
-            initial_connection_probability=data['initial_connection_probability']
+            n_agents=data['n_agents']
         )
         network.adjacency_matrix = np.array(data['adjacency_matrix'])
         network.network_history = [np.array(adj) for adj in data['network_history']]
