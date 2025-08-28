@@ -6,6 +6,7 @@ import os
 from typing import List, Optional, Dict
 import numpy as np
 import litellm
+import concurrent.futures as _f
 from dotenv import load_dotenv
 import logging
 import time
@@ -16,9 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """
-    Streamlined client for LLM-based post generation and interpretation.
-    """
+    """Minimal client for generating and rating posts."""
     
     def __init__(self, api_key: Optional[str] = None, model_name: str = None):
         """
@@ -37,32 +36,23 @@ class LLMClient:
         litellm.drop_params = True
         os.environ["OPENAI_API_KEY"] = self.api_key
         
-        # Model configuration
         self.model_name = model_name
-        
-        # Batch processing configuration with defaults
         self.max_workers = 50
-        self.timeout = 600
+        self.timeout = 60
     
     def _is_gpt5_model(self) -> bool:
-        """Detect gpt-5 family models by name prefix."""
         try:
-            name = str(self.model_name) if self.model_name is not None else ""
+            return str(self.model_name or "").startswith("gpt-5")
         except Exception:
-            name = ""
-        return name.startswith("gpt-5")
+            return False
 
     
     
     def _build_llm_params(self, max_tokens: int) -> Dict:
         """Build parameter dict compatible with model family (gpt-5 vs others)."""
-        # OpenAI chat completions expect 'max_tokens'; avoid passing multiple variants
-        # since OpenAI rejects setting both max_tokens and max_completion_tokens.
         params: Dict = {'max_tokens': max_tokens}
         if self._is_gpt5_model():
-            # Keep reasoning cheap so output tokens remain
             params['reasoning_effort'] = 'low'
-            # Encourage plain text output
             params['response_format'] = {'type': 'text'}
         return params
 
@@ -78,9 +68,9 @@ class LLMClient:
             **llm_params
         )
         text = self._extract_text_from_model_response(response) or ""
-        if not text and self._is_gpt5_model() and max_tokens < 128:
+        if not text and self._is_gpt5_model() and max_tokens < 512:
             try:
-                retry_params = self._build_llm_params(max(128, max_tokens * 2))
+                retry_params = self._build_llm_params(max(512, max_tokens * 2))
                 response_retry = litellm.completion(
                     model=self.model_name,
                     messages=[{"role": "user", "content": prompt}],
@@ -92,135 +82,29 @@ class LLMClient:
         return text
 
     def _build_extra_body(self) -> Dict:
-        """Extra payload for specific model families (e.g., GPT-5 Responses API)."""
-        if self._is_gpt5_model():
-            # Ensure text output with Responses API
-            return {'response_format': {'type': 'text'}}
-        return {}
+        return {'response_format': {'type': 'text'}} if self._is_gpt5_model() else {}
 
     
     
-    def generate_posts_for_agents(self, topic: str, agents: List) -> List[str]:
-        """
-        Generate posts for multiple agents using their specific personalities.
-        
-        Args:
-            topic: Topic to generate posts about
-            agents: List of agent objects with personalities
-            
-        Returns:
-            List of generated post texts
-        """
-        start_time = time.time()
-        
-        prompts = []
-        for agent in agents:
-            prompt = agent.generate_post_prompt(topic)
-            prompts.append(prompt)
-        
-        logger.info(f"Generated {len(prompts)} prompts, calling LLM API...")
-        
-        try:
-            responses = self._call_llm(prompts, max_completion_tokens=800)
-            logger.info(f"LLM API call successful. Received {len(responses)} responses")
-            
-            # Validate response count
-            if len(responses) != len(agents):
-                logger.error(f"RESPONSE COUNT MISMATCH: Expected {len(agents)} responses, got {len(responses)}")
-                raise ValueError(f"Expected {len(agents)} responses, got {len(responses)}")
-            
-            # Clean and validate responses
-            cleaned_responses = []
-            for i, response in enumerate(responses):
-                if response and response.strip():
-                    cleaned_responses.append(response.strip())
-                else:
-                    logger.warning(f"Empty response for agent {i}, using fallback")
-                    cleaned_responses.append(f"Agent {i} has no opinion on {topic}")
-            
-            elapsed_time = time.time() - start_time
-            logger.info(f"Post generation completed in {elapsed_time:.2f}s. Generated {len(cleaned_responses)} posts")
-            
-            return cleaned_responses
-            
-        except Exception as e:
-            elapsed_time = time.time() - start_time
-            logger.error(f"Post generation failed after {elapsed_time:.2f}s: {str(e)}")
-            raise
-    
-    def interpret_neighbor_posts(self, posts: List[str], topic: str, agents: List, adjacency_matrix: np.ndarray) -> tuple[List[float], List[List[tuple[int, float]]]]:
-        """
-        Interpret connected neighbors' posts for each agent.
-        
-        Args:
-            posts: List of posts to analyze
-            topic: Topic to extract opinions for
-            agents: List of agent objects with personalities
-            adjacency_matrix: Current network connections
-            
-        Returns:
-            Tuple of (neighbor_opinions, individual_ratings) where:
-            - neighbor_opinions: List of average opinion values for each agent
-            - individual_ratings: List of lists, each containing (neighbor_id, rating) tuples for that agent
-        """
-        start_time = time.time()
-        
-        # Validate input data
-        if len(posts) != len(agents):
-            logger.error(f"INPUT VALIDATION FAILED: posts length ({len(posts)}) != agents length ({len(agents)})")
-            raise ValueError(f"Posts length ({len(posts)}) must equal agents length ({len(agents)})")
-        
-        neighbor_opinions = []
-        individual_ratings = []
-        
+    def generate_posts(self, topic: str, agents: List, neighbor_posts_per_agent: Optional[List[List[str]]] = None) -> List[str]:
+        prompts: List[str] = []
         for i, agent in enumerate(agents):
-            # Find connected neighbors for this agent
-            connections = adjacency_matrix[i, :]
-            neighbor_indices = np.where(connections == 1)[0]
-            
-            if len(neighbor_indices) == 0:
-                # No connections - use agent's own opinion
-                logger.debug(f"Agent {i} has no connections, using own opinion: {agent.get_opinion()}")
-                neighbor_opinions.append(agent.get_opinion())
-                individual_ratings.append([])
-            else:
-                # Rate each connected neighbor's post individually
-                logger.debug(f"Agent {i} has {len(neighbor_indices)} connections, rating neighbor posts")
-                agent_ratings = []
-                for neighbor_idx in neighbor_indices:
-                    try:
-                        neighbor_post = posts[neighbor_idx]
-                        prompt = agent.interpret_post_prompt(neighbor_post, topic)
-                        # Use single-call with small token budget for numeric output
-                        response_text = self._generate_single_text(prompt, max_completion_tokens=128)
-                        response = [response_text]
-                        rating = self._parse_opinion_response(response[0])
-                        agent_ratings.append((neighbor_idx, rating))
-                        logger.debug(f"Agent {i} rated neighbor {neighbor_idx} post: {rating}")
-                    except Exception as e:
-                        logger.debug(f"Failed to rate neighbor {neighbor_idx} post for agent {i}: {str(e)}")
-                        # Use neutral rating as fallback
-                        agent_ratings.append((neighbor_idx, 0.0))
-                
-                # Average the ratings of all connected neighbors' posts
-                if agent_ratings:
-                    avg_rating = sum(rating for _, rating in agent_ratings) / len(agent_ratings)
-                    neighbor_opinions.append(avg_rating)
-                    individual_ratings.append(agent_ratings)
-                    logger.debug(f"Agent {i} average neighbor rating: {avg_rating}")
-                else:
-                    logger.debug(f"Agent {i} has no valid ratings, using neutral opinion")
-                    neighbor_opinions.append(0.0)
-                    individual_ratings.append([])
-        
-        elapsed_time = time.time() - start_time
-        
-        # Final validation
-        if len(neighbor_opinions) != len(agents) or len(individual_ratings) != len(agents):
-            logger.error(f"OUTPUT VALIDATION FAILED: opinions={len(neighbor_opinions)}, ratings={len(individual_ratings)}, expected={len(agents)}")
-            raise ValueError(f"Output validation failed: opinions={len(neighbor_opinions)}, ratings={len(individual_ratings)}, expected={len(agents)}")
-        
-        return neighbor_opinions, individual_ratings
+            p = agent.generate_post_prompt(topic)
+            if neighbor_posts_per_agent and i < len(neighbor_posts_per_agent) and neighbor_posts_per_agent[i]:
+                combined = "\n".join(neighbor_posts_per_agent[i])
+                p = f"{p}\nConsider and, where relevant, respond to these posts from your connected agents (most recent timestep):\n{combined}\nKeep your response concise and grounded in your own opinion."
+            prompts.append(p)
+        responses = self._call_llm(prompts, max_completion_tokens=2048)
+        # Prefix each generated post with the agent name for downstream clarity
+        out: List[str] = []
+        for i, r in enumerate(responses):
+            text = r.strip() if r and isinstance(r, str) else ""
+            if not text:
+                text = f"No content for agent {i} on {topic}"
+            out.append(f"Agent {i}: {text}")
+        return out
+    
+    # Neighbor-by-neighbor rating removed for simplicity
     
 
     
@@ -241,18 +125,24 @@ class LLMClient:
 
     
     def _call_llm(self, prompts: List[str], max_completion_tokens: int = 1000) -> List[str]:
-        """Call LLM per prompt (no batch), returning extracted texts."""
+        """Call LLM per prompt; return extracted texts."""
         return self._generate_texts(prompts, max_tokens=max_completion_tokens)
 
     def _generate_texts(self, prompts: List[str], max_tokens: int) -> List[str]:
-        results: List[str] = []
-        for prompt in prompts:
+        if not prompts:
+            return []
+        results: List[str] = [""] * len(prompts)
+        def _one(i: int, p: str) -> None:
             try:
-                text = self._completion_with_retry_text(prompt, max_tokens)
+                results[i] = self._completion_with_retry_text(p, max_tokens)
             except Exception as e:
-                logger.warning(f"LLM single call failed: {e}")
-                text = ""
-            results.append(text)
+                logger.warning(f"LLM call failed: {e}")
+                results[i] = ""
+        workers = min(self.max_workers, max(1, len(prompts)))
+        with _f.ThreadPoolExecutor(max_workers=workers) as ex:
+            for i, p in enumerate(prompts):
+                ex.submit(_one, i, p)
+            ex.shutdown(wait=True)
         return results
     
     def _parse_opinion_response(self, response: str) -> float:
@@ -265,23 +155,26 @@ class LLMClient:
         Returns:
             Opinion value (-1 to 1)
         """
-        # Clean the response
-        response = response.strip()
-        response = response.replace('\n', '').replace(' ', '')
-        
-        # Extract number with improved regex to allow negative decimals and more granular values
+        text = (response or "").strip()
+        # Prefer last non-empty line if it is numeric-like
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
         import re
-        # Updated pattern to match: -1.0, -0.234, 0.789, 1.0, etc.
-        numbers = re.findall(r'-?\d+\.?\d*', response)
-        
-        if len(numbers) == 0:
+        num_pattern = re.compile(r'^-?\d+(?:\.\d+)?$')
+        if lines:
+            last = lines[-1]
+            if num_pattern.match(last):
+                try:
+                    val = float(last)
+                    return max(-1.0, min(1.0, val))
+                except Exception:
+                    pass
+        # Fallback: extract all numbers and pick the last one
+        numbers = re.findall(r'-?\d+\.?\d*', text.replace(' ', ''))
+        if not numbers:
             raise ValueError(f"No number found in response: '{response}'")
-        
         try:
-            opinion = float(numbers[0])
-            # Ensure value is in [-1, 1] range
-            opinion = max(-1.0, min(1.0, opinion))
-            return opinion
+            opinion = float(numbers[-1])
+            return max(-1.0, min(1.0, opinion))
         except ValueError:
             logger.error(f"Could not parse number from response: '{response}'")
             raise ValueError(f"Could not parse number from response: '{response}'")
@@ -412,44 +305,52 @@ class LLMClient:
 
         return None
 
-    def _call_llm_with_retry(self, prompts: List[str], max_completion_tokens: int = 1000, max_retries: int = 3) -> List[str]:
-        """
-        Call LLM with retry logic for improved reliability.
-        
-        Args:
-            prompts: List of prompts to send
-            max_completion_tokens: Maximum completion tokens to generate
-            max_retries: Maximum number of retry attempts
-            
-        Returns:
-            List of generated responses
-        """
-        for attempt in range(max_retries):
+    def rate_posts_globally(self, posts: List[str], topic: str, agents: List) -> List[float]:
+        """Rate each post using its posting agent's interpret prompt (per-agent rater)."""
+        prompts = [agents[i].interpret_post_prompt(posts[i], topic) for i in range(len(posts))]
+        texts = self._call_llm(prompts, max_completion_tokens=512)
+        ratings: List[float] = []
+        for i, t in enumerate(texts):
             try:
-                return self._call_llm(prompts, max_completion_tokens)
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    logger.error(f"LLM call failed after {max_retries} attempts: {str(e)}")
-                    raise
-                else:
-                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                    time.sleep(wait_time)
-    
-    def generate_posts_for_agents_with_retry(self, topic: str, agents: List, neighbor_posts_per_agent: Optional[List[List[str]]] = None) -> List[str]:
-        """Generate posts with retry logic, optionally including prior neighbor posts."""
+                ratings.append(self._parse_opinion_response(t))
+            except Exception:
+                # Fallback to the posting agent's current opinion to avoid collapse to 0
+                try:
+                    ratings.append(float(getattr(agents[i], 'current_opinion', 0.0)))
+                except Exception:
+                    ratings.append(0.0)
+        return ratings
+
+    def rate_posts_pairwise(self, posts: List[str], topic: str, agents: List, adjacency) -> tuple:
+        """Each agent i rates neighbor j's post. Returns (R, per_agent).
+
+        R[i, j] = rating by agent i of post j in [-1,1] (nan if not rated).
+        per_agent[i] = list of (neighbor_index, rating).
+        """
+        n = len(agents)
+        try:
+            A = np.array(adjacency)
+        except Exception:
+            A = np.ones((n, n)) - np.eye(n)
+        pair_indices: List[tuple[int, int]] = []
         prompts: List[str] = []
-        for i, agent in enumerate(agents):
-            base_prompt = agent.generate_post_prompt(topic)
-            if neighbor_posts_per_agent is not None and i < len(neighbor_posts_per_agent):
-                neighbor_texts = neighbor_posts_per_agent[i]
-                if neighbor_texts:
-                    # Append raw neighbor texts separated by newlines, no labels/metadata
-                    combined = "\n".join(neighbor_texts)
-                    base_prompt = f"{base_prompt}\nWhen generating your statement, respond to these posts from your social network. These are posts made from people you are connected to:\n{combined}"
-            prompts.append(base_prompt)
-        return self._call_llm_with_retry(prompts, max_completion_tokens=800)
-    
-    def interpret_neighbor_posts_with_retry(self, posts: List[str], topic: str, agents: List, adjacency_matrix: np.ndarray) -> tuple[List[float], List[List[tuple[int, float]]]]:
-        """Interpret posts with retry logic."""
-        # This method is more complex, so we'll implement retry at the individual rating level
-        return self.interpret_neighbor_posts(posts, topic, agents, adjacency_matrix) 
+        for i in range(n):
+            neighbors = np.where(A[i] == 1)[0]
+            for j in neighbors:
+                prompts.append(agents[i].interpret_post_prompt(posts[j], topic))
+                pair_indices.append((i, j))
+        texts = self._call_llm(prompts, max_completion_tokens=128)
+        R = np.full((n, n), np.nan, dtype=float)
+        per_agent: List[List[tuple[int, float]]] = [[] for _ in range(n)]
+        for (i, j), t in zip(pair_indices, texts):
+            try:
+                val = self._parse_opinion_response(t)
+            except Exception:
+                try:
+                    val = float(getattr(agents[j], 'current_opinion', 0.0))
+                except Exception:
+                    val = 0.0
+            v = max(-1.0, min(1.0, float(val)))
+            R[i, j] = v
+            per_agent[i].append((j, v))
+        return R, per_agent

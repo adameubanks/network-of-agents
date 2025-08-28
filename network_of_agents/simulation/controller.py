@@ -31,11 +31,8 @@ class Controller:
                  random_seed: Optional[int] = None,
 
                  llm_enabled: bool = True,
-                 noise_enabled: bool = False,
-                 noise_mean: float = 0.0,
-                 noise_std: float = 0.0,
-                 noise_clip: bool = True,
-                 on_timestep: Optional[Callable[[Dict[str, Any], int], None]] = None):
+                 on_timestep: Optional[Callable[[Dict[str, Any], int], None]] = None,
+                 resume_data: Optional[Dict[str, Any]] = None):
         """
         Initialize simulation controller.
         
@@ -59,10 +56,6 @@ class Controller:
         self.random_seed = random_seed
 
         self.llm_enabled = llm_enabled
-        self.noise_enabled = noise_enabled
-        self.noise_mean = noise_mean
-        self.noise_std = noise_std
-        self.noise_clip = noise_clip
         self.on_timestep = on_timestep
         
 
@@ -74,36 +67,25 @@ class Controller:
         self.network = NetworkModel(n_agents, random_seed)
         self.agents = self._initialize_agents()
 
-        # Reinitialize A[0] using Eq.(4) based on initial opinions to avoid discontinuity
-        try:
-            X0_agent = self._get_opinion_matrix()
-            X0_math = self._to_math_domain(X0_agent)
-            # Sample all pairs per Eq.(4)
-            A0 = update_edges(self.network.get_adjacency_matrix(), X0_math, self.theta, self.epsilon, update_probability=1.0)
-            # Set directly without adding ER graph to history
-            self.network.adjacency_matrix = A0
-        except Exception:
-            # If anything fails, keep the initialized ER graph
-            pass
+        # Reinitialize A[0] using Eq.(4) based on initial opinions (unless resuming)
+        if resume_data is None:
+            try:
+                X0_agent = self._get_opinion_matrix()
+                X0_math = self._to_math_domain(X0_agent)
+                A0 = update_edges(self.network.get_adjacency_matrix(), X0_math, self.theta, self.epsilon, update_probability=1.0)
+                self.network.adjacency_matrix = A0
+            except Exception:
+                pass
         
         # Simulation state
         self.is_running = False
         self.current_timestep = 0
         
-        # Circuit breaker for LLM failures
-        self.llm_failure_count = 0
-        self.llm_circuit_open = False
-        self.llm_circuit_open_time = 0
-        self.llm_circuit_timeout = 60  # 60 seconds timeout
+        # Minimal state (no circuit breaker/health)
         
 
         
-        # Health monitoring
         self.simulation_start_time = None
-        self.timestep_times = []
-        self.llm_success_count = 0
-        self.llm_failure_count = 0
-        self.llm_total_calls = 0
         
         # Data storage
         self.opinion_history = []
@@ -112,6 +94,38 @@ class Controller:
         self.posts_history = []
         self.interpretations_history = []
         self.timesteps = []
+
+        # If resuming, restore state
+        if resume_data is not None:
+            try:
+                self.opinion_history = [np.array(x) for x in resume_data.get('opinion_history', [])]
+                self.mean_opinions = resume_data.get('mean_opinions', [])
+                self.std_opinions = resume_data.get('std_opinions', [])
+                self.posts_history = resume_data.get('posts_history', []) if resume_data.get('posts_history') is not None else []
+                self.interpretations_history = resume_data.get('interpretations_history', []) if resume_data.get('interpretations_history') is not None else []
+                self.timesteps = resume_data.get('timesteps', []) if resume_data.get('timesteps') is not None else []
+                last_ops = None
+                if self.opinion_history:
+                    last_ops = self.opinion_history[-1]
+                elif resume_data.get('final_opinions') is not None:
+                    last_ops = np.array(resume_data['final_opinions'])
+                if last_ops is not None and len(last_ops) == self.n_agents:
+                    for i in range(self.n_agents):
+                        self.agents[i].update_opinion(float(last_ops[i]))
+                # Rebuild adjacency from last timestep if available
+                if self.timesteps:
+                    last_ts = self.timesteps[-1]
+                    A = np.zeros((self.n_agents, self.n_agents))
+                    for agent_info in last_ts.get('agents', []):
+                        i = int(agent_info.get('agent_id'))
+                        for j in agent_info.get('connected_agents', []):
+                            A[i, j] = 1.0; A[j, i] = 1.0
+                    self.network.adjacency_matrix = A
+                # Continue from next timestep
+                self.current_timestep = max(0, len(self.mean_opinions))
+            except Exception:
+                # If anything fails, fall back to fresh start
+                self.current_timestep = 0
     
     def _initialize_agents(self) -> List[Agent]:
         """
@@ -141,18 +155,19 @@ class Controller:
             Dictionary containing simulation results
         """
         self.is_running = True
-        self.current_timestep = 0
+        # Preserve current_timestep if resuming
+        start_timestep = self.current_timestep
         self.simulation_start_time = time.time()
         
-        # Store initial state
-        if self.llm_enabled:
-            # Don't store detailed agent state for initial empty state
-            self._store_current_state([], [], [], skip_detailed=True)
-        else:
-            self._store_current_state(None, None, None)
+        # Store initial state only on fresh runs
+        if start_timestep == 0:
+            if self.llm_enabled:
+                self._store_current_state([], [], [], skip_detailed=True)
+            else:
+                self._store_current_state(None, None, None)
         
         # Main simulation loop
-        iterator = tqdm(range(self.num_timesteps), desc="Running simulation") if progress_bar else range(self.num_timesteps)
+        iterator = tqdm(range(start_timestep, self.num_timesteps), desc="Running simulation") if progress_bar else range(start_timestep, self.num_timesteps)
         
         try:
             for timestep in iterator:
@@ -162,77 +177,46 @@ class Controller:
                 # Step 1: Get current network state
                 X_current = self._get_opinion_matrix()
                 A_current = self.network.get_adjacency_matrix()
+                A_prev = self.network.network_history[-1] if self.network.network_history else A_current
                 
                 # Step 2: Generate posts and interpretations (LLM) or skip (no-LLM)
                 current_topic = self.topics[0]  # Use single topic for entire simulation
                 
-                # Check circuit breaker
-                if self.llm_circuit_open:
-                    if time.time() - self.llm_circuit_open_time > self.llm_circuit_timeout:
-                        logger.info("Circuit breaker timeout expired, re-enabling LLM calls")
-                        self.llm_circuit_open = False
-                        self.llm_failure_count = 0
-                    else:
-                        logger.warning(f"Circuit breaker is open, skipping LLM calls. Time remaining: {self.llm_circuit_timeout - (time.time() - self.llm_circuit_open_time):.1f}s")
-                        posts = None
-                        neighbor_opinions = None
-                        individual_ratings = None
-                
-                if self.llm_enabled and not self.llm_circuit_open:
-                    self.llm_total_calls += 1
+                if self.llm_enabled:
                     try:
                         # Prepare prior-timestep neighbor posts (raw text only)
                         if self.posts_history and len(self.posts_history[-1]) == len(self.agents):
                             prev_posts = self.posts_history[-1]
                             neighbor_posts_per_agent = []
                             for i in range(self.n_agents):
-                                connections = A_current[i, :]
+                                connections = A_prev[i, :]
                                 neighbor_indices = np.where(connections == 1)[0]
+                                # Use prior timestep posts as-is (already name-prefixed)
                                 neighbor_texts = [prev_posts[j] for j in neighbor_indices if prev_posts[j] and prev_posts[j].strip()]
                                 neighbor_posts_per_agent.append(neighbor_texts)
                         else:
                             neighbor_posts_per_agent = None
 
-                        posts = self.llm_client.generate_posts_for_agents_with_retry(current_topic, self.agents, neighbor_posts_per_agent)
-                        logger.info(f"Posts generated successfully. Count: {len(posts)}, Expected: {len(self.agents)}")
-                        
-                        # Validate posts data
+                        posts = self.llm_client.generate_posts(current_topic, self.agents, neighbor_posts_per_agent)
                         if len(posts) != len(self.agents):
-                            logger.error(f"POSTS VALIDATION FAILED: Got {len(posts)} posts, expected {len(self.agents)}")
                             raise ValueError(f"Posts count mismatch: got {len(posts)}, expected {len(self.agents)}")
-                        
-                        neighbor_opinions, individual_ratings = self.llm_client.interpret_neighbor_posts_with_retry(posts, current_topic, self.agents, A_current)
-                        
-                        # Validate interpretation data
-                        if len(neighbor_opinions) != len(self.agents):
-                            logger.error(f"OPINIONS VALIDATION FAILED: Got {len(neighbor_opinions)} opinions, expected {len(self.agents)}")
-                            raise ValueError(f"Opinions count mismatch: got {len(neighbor_opinions)}, expected {len(self.agents)}")
-                        
-                        if len(individual_ratings) != len(self.agents):
-                            logger.error(f"RATINGS VALIDATION FAILED: Got {len(individual_ratings)} ratings, expected {len(self.agents)}")
-                            raise ValueError(f"Ratings count mismatch: got {len(individual_ratings)}, expected {len(self.agents)}")
-                                                
-                        # Track success
-                        self.llm_success_count += 1
-                        
-                        # Reset failure count on success
-                        self.llm_failure_count = 0
+
+                        # Pairwise neighbor ratings at time k over current adjacency A[k]
+                        R_pairwise, individual_ratings = self.llm_client.rate_posts_pairwise(posts, current_topic, self.agents, A_current)
+                        # Aggregate perceived opinion per post j as mean over raters i connected to j
+                        neighbor_opinions = []
+                        for j in range(self.n_agents):
+                            col = R_pairwise[:, j]
+                            if np.all(np.isnan(col)):
+                                # Fallback: use poster's own current opinion if no ratings
+                                neighbor_opinions.append(float(self.agents[j].get_opinion()))
+                            else:
+                                neighbor_opinions.append(float(np.nanmean(col)))
                         
                     except Exception as e:
                         logger.error(f"LLM call failed at timestep {timestep}: {str(e)}")
-                        self.llm_failure_count += 1
-                        
-                        # Check if circuit breaker should open
-                        if self.llm_failure_count >= 3:  # Open circuit after 3 consecutive failures
-                            logger.error(f"Opening circuit breaker after {self.llm_failure_count} consecutive failures")
-                            self.llm_circuit_open = True
-                            self.llm_circuit_open_time = time.time()
-                        
-                        # Fallback to no-LLM mode for this timestep
-                        posts = None
-                        neighbor_opinions = None
-                        individual_ratings = None
-                        logger.info("Falling back to no-LLM mode for this timestep")
+                        posts = None; neighbor_opinions = None; individual_ratings = None
+                        logger.info("Skipping LLM for this timestep due to error")
                 else:
                     posts = None
                     neighbor_opinions = None
@@ -243,13 +227,8 @@ class Controller:
                 if self.llm_enabled:
                     X_interpreted = np.array(neighbor_opinions)
                 else:
-                    # No-LLM: self-perception equals current opinions, with optional Gaussian noise
+                    # No-LLM: use current opinions directly
                     X_interpreted = X_current.copy()
-                    if self.noise_enabled and self.noise_std > 0.0:
-                        noise = np.random.normal(self.noise_mean, self.noise_std, size=self.n_agents)
-                        X_interpreted = X_interpreted + noise
-                        if self.noise_clip:
-                            X_interpreted = np.clip(X_interpreted, -1.0, 1.0)
 
                 # Convert to math domain [0, 1] just-in-time for opinion dynamics
                 X_for_math = self._to_math_domain(X_interpreted)
@@ -269,6 +248,9 @@ class Controller:
                 if self.llm_enabled:
                     # Additional validation before storing state
                     if posts is not None and neighbor_opinions is not None and individual_ratings is not None:
+                        # Keep a compact posts history for next-step conditioning
+                        # Store generated posts as-is (already name-prefixed by LLM client)
+                        self.posts_history.append(posts)
                         self._store_current_state(posts, neighbor_opinions, individual_ratings)
                     else:
                         self._store_current_state(None, None, None, skip_detailed=True)
@@ -277,9 +259,8 @@ class Controller:
                 
 
                 
-                # Record timestep performance
-                timestep_duration = time.time() - timestep_start_time
-                self.timestep_times.append(timestep_duration)
+                # Record simple timing
+                _ = time.time() - timestep_start_time
 
                 # Invoke per-timestep callback with partial results snapshot
                 if self.on_timestep is not None:
@@ -291,9 +272,7 @@ class Controller:
                     except Exception as e:
                         logger.warning(f"on_timestep callback failed at timestep {timestep}: {e}")
                 
-                # Report health metrics every 10 timesteps
-                if timestep % 10 == 0:
-                    self._report_health_metrics(timestep)
+                # No periodic health reporting
             
             self.is_running = False
             return self._get_simulation_results()
@@ -332,10 +311,6 @@ class Controller:
                 'theta': self.theta,
                 # No initial ER probability; full resample each step per Eq.(4)
                 'llm_enabled': self.llm_enabled,
-                'noise_enabled': self.noise_enabled,
-                'noise_mean': self.noise_mean,
-                'noise_std': self.noise_std,
-                'noise_clip': self.noise_clip,
             },
             'random_seed': self.random_seed,
             'topics': self.topics,
@@ -391,12 +366,7 @@ class Controller:
         self.mean_opinions.append(mean_opinion)
         self.std_opinions.append(std_opinion)
         
-        # Only store posts and interpretations when provided (LLM mode only)
-        if posts is not None:
-            self.posts_history.append(posts)
-        if interpretations is not None:
-            # Wrap in list for compatibility with existing structure
-            self.interpretations_history.append([interpretations])
+        # Do not maintain separate global posts/interpretations histories; we record them per-timestep in self.timesteps
         
         # Always store a per-timestep network snapshot
         if self.llm_enabled and (not skip_detailed) and posts is not None and interpretations is not None and individual_ratings is not None:
@@ -410,6 +380,20 @@ class Controller:
         current_adjacency = self.network.get_adjacency_matrix()
         current_opinions = self._get_opinion_matrix()
         
+        # Build incoming ratings map: for each target j, collect (source i, rating)
+        incoming_map: Dict[int, List[tuple[int, float]]] = {j: [] for j in range(self.n_agents)}
+        try:
+            for i, out_list in enumerate(individual_ratings or []):
+                if not out_list:
+                    continue
+                for (j, r) in out_list:
+                    try:
+                        incoming_map[int(j)].append((int(i), float(r)))
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
         timestep_data = {
             'timestep': self.current_timestep,
             'agents': []
@@ -428,11 +412,18 @@ class Controller:
             # Get just the agent IDs that are connected
             connected_agent_ids = neighbor_indices.tolist()
             
+            # Format ratings for clarity
+            outgoing_ratings = [{'target': int(j), 'rating': float(r)} for (j, r) in agent_ratings]
+            incoming_ratings = [{'source': int(src), 'rating': float(r)} for (src, r) in incoming_map.get(i, [])]
+
             agent_data = {
                 'agent_id': i,
                 'opinion': float(current_opinions[i]),
                 'post': agent_post,
-                'connected_agents': connected_agent_ids
+                'inferred_opinion': float(agent_interpretation),
+                'connected_agents': connected_agent_ids,
+                'outgoing_ratings': outgoing_ratings,
+                'incoming_ratings': incoming_ratings
             }
             
             timestep_data['agents'].append(agent_data)
@@ -548,10 +539,6 @@ class Controller:
                 'epsilon': self.epsilon,
                 'theta': self.theta,
                 'llm_enabled': self.llm_enabled,
-                'noise_enabled': self.noise_enabled,
-                'noise_mean': self.noise_mean,
-                'noise_std': self.noise_std,
-                'noise_clip': self.noise_clip,
             },
             'random_seed': self.random_seed,
             'topics': self.topics

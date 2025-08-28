@@ -97,11 +97,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
     llm_config = config.get('llm', {})
     llm_enabled = llm_config.get('enabled', True)
 
-    noise_config = config.get('noise', {})
-    noise_enabled = noise_config.get('enabled', False)
-    noise_mean = noise_config.get('mean', 0.0)
-    noise_std = noise_config.get('std', 0.0)
-    noise_clip = noise_config.get('clip', True)
+    # Noise removed
     
     # Use provided seed or default from config
     if random_seed is None:
@@ -112,30 +108,58 @@ def run_simulation(config: Dict[str, Any], topic: str,
     # Create LLM client
     llm_client = create_llm_client(config)
     
-    # Setup per-run snapshot naming
+    # Setup per-run snapshot naming and possible resume
     results_dir = 'results'
     os.makedirs(results_dir, exist_ok=True)
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     n_agents = sim_config['n_agents']
     num_timesteps = sim_config['num_timesteps']
-    if not llm_enabled:
-        noise_cfg = config.get('noise', {})
-        model_name = 'no-llm-noise' if noise_cfg.get('enabled', False) else 'no-llm'
-    else:
-        model_name = llm_config.get('model_name', 'unknown')
+    model_name = ('no-llm' if not llm_enabled else llm_config.get('model_name', 'unknown'))
     topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
-
-    # Per-topic directory
     topic_dir = f"{results_dir}/{topic_safe}"
     os.makedirs(topic_dir, exist_ok=True)
 
-    # Single per-run file targets (inside topic folder)
-    run_data_path = f"{topic_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}.json"
-    run_plot_mean_path = f"{topic_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_mean_std.png"
-    run_plot_individuals_path = f"{topic_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_individuals.png"
-    # Video output directory and prefix (write MP4 directly to topic folder)
-    graph_dir = topic_dir
-    run_plot_graph_prefix = f"{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_graph"
+    # Detect resume
+    resume_cfg = config.get('resume', {})
+    resume_enabled = bool(resume_cfg.get('enabled', False))
+    resume_path = resume_cfg.get('path')
+    resume_data: Optional[Dict[str, Any]] = None
+
+    def _load_json(p: str) -> Optional[Dict[str, Any]]:
+        try:
+            with open(p, 'r') as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    if resume_enabled and not resume_path:
+        # Auto-pick latest partial for this topic
+        try:
+            candidates = [os.path.join(topic_dir, fn) for fn in os.listdir(topic_dir) if fn.endswith('.json')]
+            candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+            for p in candidates:
+                d = _load_json(p)
+                if d and d.get('is_partial'):
+                    resume_path = p; resume_data = d; break
+        except Exception:
+            pass
+    elif resume_enabled and resume_path:
+        resume_data = _load_json(resume_path)
+
+    # Paths: reuse resume file if resuming, else create new
+    if resume_enabled and resume_data and resume_path:
+        run_data_path = resume_path
+        base = os.path.splitext(os.path.basename(run_data_path))[0]
+        run_plot_mean_path = os.path.join(topic_dir, f"{base}_mean_std.png")
+        run_plot_individuals_path = os.path.join(topic_dir, f"{base}_individuals.png")
+        graph_dir = topic_dir
+        run_plot_graph_prefix = f"{base}_graph"
+    else:
+        run_data_path = f"{topic_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}.json"
+        run_plot_mean_path = f"{topic_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_mean_std.png"
+        run_plot_individuals_path = f"{topic_dir}/{topic_safe}_{n_agents}_{model_name}_{run_timestamp}_individuals.png"
+        graph_dir = topic_dir
+        run_plot_graph_prefix = f"{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_graph"
 
     def on_timestep(snapshot: Dict[str, Any], timestep_index: int) -> None:
         # Ensure topic present for downstream consumers
@@ -154,11 +178,8 @@ def run_simulation(config: Dict[str, Any], topic: str,
         random_seed=random_seed,
 
         llm_enabled=llm_enabled,
-        noise_enabled=noise_enabled,
-        noise_mean=noise_mean,
-        noise_std=noise_std,
-        noise_clip=noise_clip,
-        on_timestep=on_timestep
+        on_timestep=on_timestep,
+        resume_data=resume_data
     )
     
     # Run simulation
@@ -166,8 +187,11 @@ def run_simulation(config: Dict[str, Any], topic: str,
     if llm_enabled:
         print(f"Mode: LLM (model={llm_config.get('model_name')})")
     else:
-        print(f"Mode: NO-LLM (noise={'on' if noise_enabled else 'off'}, mean={noise_mean}, std={noise_std}, clip={noise_clip})")
+        print(f"Mode: NO-LLM")
     print(f"Initial opinions: {[agent.get_opinion() for agent in controller.agents]}")
+    if resume_enabled and resume_data:
+        done = len(controller.mean_opinions)
+        print(f"Resuming from timestep {done}/{num_timesteps}")
     start_time = time.time()
     results = controller.run_simulation(progress_bar=True)
     end_time = time.time()
@@ -356,8 +380,7 @@ def main():
                 llm_cfg = config.get('llm', {})
                 llm_on = llm_cfg.get('enabled', True)
                 if not llm_on:
-                    noise_cfg = config.get('noise', {})
-                    model = 'no-llm-noise' if noise_cfg.get('enabled', False) else 'no-llm'
+                    model = 'no-llm'
                 else:
                     model = llm_cfg.get('model_name', 'unknown')
                 sim_cfg = config['simulation']

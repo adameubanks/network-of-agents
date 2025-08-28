@@ -35,6 +35,19 @@ class Agent:
         Returns:
             Agent-specific prompt
         """
+        # Support either a single topic or a vs-topic formatted as "Topic A vs Topic B"
+        s = topic.strip(); low = s.lower(); sep = " vs "
+        i = low.find(sep)
+        if i != -1:
+            a = s[:i].strip(); b = s[i + len(sep):].strip()
+            prompt = f"""
+Write a concise argument about {a} vs {b} (3-6 sentences).
+Your current opinion: {self.current_opinion:.3f} (-1=strongly favors {a} over {b}, 1=strongly favors {b} over {a}).
+
+Express your stance along this axis with reasoning and nuance. Use prose only, no numeric score. Keep it under 800 characters.
+"""
+            return prompt
+
         prompt = f"""
 Generate a comprehensive statement about {topic} (3-6 sentences, multiple paragraphs if needed).
 Your current opinion intensity: {self.current_opinion:.3f} (-1=strongly oppose, 1=strongly support)
@@ -53,6 +66,7 @@ Express your opinion with detailed reasoning, context, and nuance. Examples of o
 Your opinion is {self.current_opinion:.3f}, so your post should reflect this precise level of support/opposition for {topic}.
 Include detailed reasoning, personal context, specific examples, qualifications, and nuanced thoughts.
 Feel free to use multiple paragraphs if needed to fully express your position.
+Do not include any numeric score for your opinion; express your stance in prose.
 Keep it under 800 characters.
 """
         return prompt
@@ -90,30 +104,27 @@ Keep it under 800 characters.
         Returns:
             Agent-specific interpretation prompt
         """
-        prompt = f"""
-Analyze the following post about {topic} and provide a single opinion value.
+        # Support either a single topic or a vs-topic formatted as "Topic A vs Topic B"
+        s = topic.strip(); low = s.lower(); sep = " vs "
+        i = low.find(sep)
+        if i != -1:
+            a = s[:i].strip(); b = s[i + len(sep):].strip()
+            prompt = f"""
+Rate the post on the axis {a} (-1) ↔ {b} (1).
+-1.000 = strongly favors {a} over {b}
+ 1.000 = strongly favors {b} over {a}
 
-Consider the overall sentiment, reasoning, qualifications, and context expressed in the post.
-Use 2-3 decimal places for precision. Examples of opinion ratings:
-- -1.000: "I strongly oppose this and believe it's completely wrong."
-- -0.750: "I'm strongly against this but acknowledge some complexity."
-- -0.500: "I'm mostly against this but see some valid points."
-- -0.250: "I'm somewhat against this but open to discussion."
-- 0.000: "I'm completely neutral - I don't have strong feelings either way."
-- 0.250: "I'm somewhat supportive but have reservations."
-- 0.500: "I mostly support this but have some concerns."
-- 0.750: "I'm strongly supportive but acknowledge some issues."
-- 1.000: "I fully support this and believe it's completely right."
-
-Post to analyze: "{post}"
-
-Consider the nuanced language, qualifications, and reasoning in the post.
-Provide a single number between -1 and 1 with 2-3 decimal places:
--1.000 = strongly oppose/disagree
-1.000 = strongly support/agree
-
-IMPORTANT: Respond with ONLY a single number between -1.000 and 1.000 (e.g., -0.234, 0.567, 0.789).
+Post: "{post}"
+Respond with ONLY one number in [-1.000, 1.000] on its own line. Use 0.000 if neutral.
 """
-        return prompt
-    
+            return prompt
+        prompt = f"""
+Rate the post about "{topic}" on a -1 to 1 scale.
+-1.000 = strongly oppose, 1.000 = strongly support
+
+Post: "{post}"
+Respond with ONLY one number in [-1.000, 1.000] on its own line. Use 0.000 if neutral.
+"""
+        return prompt 
+
  

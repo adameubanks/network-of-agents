@@ -308,7 +308,7 @@ def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[s
         save_path: Path to save the JSON file
         config: Configuration dictionary
     """
-    # Create a copy of results for saving
+    # Create a copy of results for saving (leaner, per-timestep centric)
     save_data = {
         'topic': results.get('topic', 'Unknown'),
         'mean_opinions': results['mean_opinions'],
@@ -316,15 +316,16 @@ def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[s
         'opinion_history': results['opinion_history'],
         'final_opinions': results['final_opinions'],
         'simulation_params': results['simulation_params'],
-        'random_seed': results['random_seed']
+        'random_seed': results['random_seed'],
+        'timesteps': results.get('timesteps', [])
     }
-    # Include text histories only if present
-    if 'posts_history' in results:
-        save_data['posts_history'] = results['posts_history']
-    if 'interpretations_history' in results:
-        save_data['interpretations_history'] = results['interpretations_history']
-    if 'timesteps' in results:
-        save_data['timesteps'] = results['timesteps']
+    # Add a dict view keyed by timestep index for easier expand/collapse in viewers
+    try:
+        ts = save_data.get('timesteps', [])
+        if isinstance(ts, list):
+            save_data['timesteps_by_index'] = {str(t.get('timestep', i)): t for i, t in enumerate(ts) if isinstance(t, dict)}
+    except Exception:
+        pass
     
     # Add partial result information if applicable
     if results.get('is_partial', False):
