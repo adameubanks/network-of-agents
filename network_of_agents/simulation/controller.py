@@ -298,7 +298,7 @@ class Controller:
             self.is_running = False
             return self._get_simulation_results()
             
-        except Exception as e:
+        except BaseException as e:
             # Save partial results when an error occurs
             self.is_running = False
             print(f"\nSimulation interrupted at timestep {self.current_timestep + 1}/{self.num_timesteps}")

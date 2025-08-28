@@ -3,12 +3,12 @@
     "n_agents": 50,
     "epsilon": 0.01,
     "theta": 7,
-    "num_timesteps": 100,
+    "num_timesteps": 50,
     
     "random_seed": 42
   },
   "llm": {
-    "enabled": false,
+    "enabled": true,
     "api_key_env": "OPENAI_API_KEY",
     "model_name": "gpt-5-nano"
   },
@@ -19,7 +19,8 @@
     "clip": true
   },
   "topics": [
-    "test topic"
+    "vanilla better than chocolate",
+    "chocolate better than vanilla"
   ]
 }
 
