@@ -201,6 +201,9 @@ class Controller:
                         if len(posts) != len(self.agents):
                             raise ValueError(f"Posts count mismatch: got {len(posts)}, expected {len(self.agents)}")
 
+                        # Store generated posts immediately so next timestep can condition on them
+                        self.posts_history.append(posts)
+
                         # Pairwise neighbor ratings at time k over current adjacency A[k]
                         R_pairwise, individual_ratings = self.llm_client.rate_posts_pairwise(posts, current_topic, self.agents, A_current)
                         # Aggregate perceived opinion per post j as mean over raters i connected to j
@@ -248,9 +251,7 @@ class Controller:
                 if self.llm_enabled:
                     # Additional validation before storing state
                     if posts is not None and neighbor_opinions is not None and individual_ratings is not None:
-                        # Keep a compact posts history for next-step conditioning
-                        # Store generated posts as-is (already name-prefixed by LLM client)
-                        self.posts_history.append(posts)
+                        # Posts already recorded; store detailed state for this timestep
                         self._store_current_state(posts, neighbor_opinions, individual_ratings)
                     else:
                         self._store_current_state(None, None, None, skip_detailed=True)
@@ -379,6 +380,7 @@ class Controller:
         """Store detailed information about each agent at current timestep."""
         current_adjacency = self.network.get_adjacency_matrix()
         current_opinions = self._get_opinion_matrix()
+        import re
         
         # Build incoming ratings map: for each target j, collect (source i, rating)
         incoming_map: Dict[int, List[tuple[int, float]]] = {j: [] for j in range(self.n_agents)}
@@ -394,9 +396,14 @@ class Controller:
         except Exception:
             pass
 
+        # Prepare reply detection: mentions like "Agent 7"
+        mention_pattern = re.compile(r"\bAgent\s+(\d+)\b", flags=re.IGNORECASE)
+
         timestep_data = {
             'timestep': self.current_timestep,
-            'agents': []
+            'agents': [],
+            # reply_edges: list of {source, target} extracted from post body mentions (excluding self)
+            'reply_edges': []
         }
                 
         for i, agent in enumerate(self.agents):
@@ -427,6 +434,23 @@ class Controller:
             }
             
             timestep_data['agents'].append(agent_data)
+
+            # Extract reply targets from post text
+            try:
+                text = str(agent_post or "")
+                targets: List[int] = []
+                for m in mention_pattern.findall(text):
+                    try:
+                        j = int(m)
+                        if j != i:
+                            targets.append(j)
+                    except Exception:
+                        continue
+                if targets:
+                    for j in sorted(set(targets)):
+                        timestep_data['reply_edges'].append({'source': int(i), 'target': int(j)})
+            except Exception:
+                pass
         
         self.timesteps.append(timestep_data)
     

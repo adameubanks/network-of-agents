@@ -48,37 +48,23 @@ class LLMClient:
 
     
     
-    def _build_llm_params(self, max_tokens: int) -> Dict:
+    def _build_llm_params(self) -> Dict:
         """Build parameter dict compatible with model family (gpt-5 vs others)."""
-        params: Dict = {'max_tokens': max_tokens}
+        params: Dict = {}
         if self._is_gpt5_model():
             params['reasoning_effort'] = 'low'
             params['response_format'] = {'type': 'text'}
         return params
 
-    def _completion_with_retry_text(self, prompt: str, max_tokens: int) -> str:
-        """Make a single completion call and return extracted text.
-
-        For GPT-5: if empty and budget is small, retry once with a larger budget.
-        """
-        llm_params = self._build_llm_params(max_tokens)
+    def _completion_with_retry_text(self, prompt: str) -> str:
+        """Make a single completion call and return extracted text."""
+        llm_params = self._build_llm_params()
         response = litellm.completion(
             model=self.model_name,
             messages=[{"role": "user", "content": prompt}],
             **llm_params
         )
         text = self._extract_text_from_model_response(response) or ""
-        if not text and self._is_gpt5_model() and max_tokens < 512:
-            try:
-                retry_params = self._build_llm_params(max(512, max_tokens * 2))
-                response_retry = litellm.completion(
-                    model=self.model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                    **retry_params
-                )
-                text = self._extract_text_from_model_response(response_retry) or ""
-            except Exception:
-                pass
         return text
 
     def _build_extra_body(self) -> Dict:
@@ -87,14 +73,31 @@ class LLMClient:
     
     
     def generate_posts(self, topic: str, agents: List, neighbor_posts_per_agent: Optional[List[List[str]]] = None) -> List[str]:
+        # Limit neighbor context and truncate to avoid exceeding provider limits
+        MAX_NEIGHBORS = 6
+        MAX_NEIGHBOR_CHARS = 220
         prompts: List[str] = []
         for i, agent in enumerate(agents):
             p = agent.generate_post_prompt(topic)
             if neighbor_posts_per_agent and i < len(neighbor_posts_per_agent) and neighbor_posts_per_agent[i]:
-                combined = "\n".join(neighbor_posts_per_agent[i])
-                p = f"{p}\nConsider and, where relevant, respond to these posts from your connected agents (most recent timestep):\n{combined}\nKeep your response concise and grounded in your own opinion."
+                # Take the most recent up to MAX_NEIGHBORS
+                neighbors = neighbor_posts_per_agent[i][-MAX_NEIGHBORS:]
+                trimmed = []
+                for txt in neighbors:
+                    t = (txt or "").strip()
+                    if len(t) > MAX_NEIGHBOR_CHARS:
+                        t = t[:MAX_NEIGHBOR_CHARS - 1] + "…"
+                    trimmed.append(t)
+                combined = "\n".join(trimmed)
+                p = (
+                    f"{p}\nHere are recent posts from connected agents. Write a conversational, social-post reply:"
+                    f"\n- Optionally respond to 1-2 agents by name (e.g., Agent 3)."
+                    f"\n- You may quote/paraphrase briefly and agree, disagree, or ask a question."
+                    f"\n- Keep it 1-3 sentences, ≤320 characters, first person."
+                    f"\n\n{combined}"
+                )
             prompts.append(p)
-        responses = self._call_llm(prompts, max_completion_tokens=2048)
+        responses = self._call_llm(prompts)
         # Prefix each generated post with the agent name for downstream clarity
         out: List[str] = []
         for i, r in enumerate(responses):
@@ -108,7 +111,7 @@ class LLMClient:
     
 
     
-    def _generate_single_text(self, prompt: str, max_completion_tokens: int = 1000, temperature: float = None) -> str:
+    def _generate_single_text(self, prompt: str, temperature: float = None) -> str:
         """
         Generate single text using the LLM.
         
@@ -120,21 +123,21 @@ class LLMClient:
         Returns:
             Generated text
         """
-        return self._completion_with_retry_text(prompt, max_completion_tokens)
+        return self._completion_with_retry_text(prompt)
     
 
     
-    def _call_llm(self, prompts: List[str], max_completion_tokens: int = 1000) -> List[str]:
+    def _call_llm(self, prompts: List[str]) -> List[str]:
         """Call LLM per prompt; return extracted texts."""
-        return self._generate_texts(prompts, max_tokens=max_completion_tokens)
+        return self._generate_texts(prompts)
 
-    def _generate_texts(self, prompts: List[str], max_tokens: int) -> List[str]:
+    def _generate_texts(self, prompts: List[str]) -> List[str]:
         if not prompts:
             return []
         results: List[str] = [""] * len(prompts)
         def _one(i: int, p: str) -> None:
             try:
-                results[i] = self._completion_with_retry_text(p, max_tokens)
+                results[i] = self._completion_with_retry_text(p)
             except Exception as e:
                 logger.warning(f"LLM call failed: {e}")
                 results[i] = ""
@@ -308,7 +311,7 @@ class LLMClient:
     def rate_posts_globally(self, posts: List[str], topic: str, agents: List) -> List[float]:
         """Rate each post using its posting agent's interpret prompt (per-agent rater)."""
         prompts = [agents[i].interpret_post_prompt(posts[i], topic) for i in range(len(posts))]
-        texts = self._call_llm(prompts, max_completion_tokens=512)
+        texts = self._call_llm(prompts)
         ratings: List[float] = []
         for i, t in enumerate(texts):
             try:
@@ -339,7 +342,7 @@ class LLMClient:
             for j in neighbors:
                 prompts.append(agents[i].interpret_post_prompt(posts[j], topic))
                 pair_indices.append((i, j))
-        texts = self._call_llm(prompts, max_completion_tokens=128)
+        texts = self._call_llm(prompts)
         R = np.full((n, n), np.nan, dtype=float)
         per_agent: List[List[tuple[int, float]]] = [[] for _ in range(n)]
         for (i, j), t in zip(pair_indices, texts):

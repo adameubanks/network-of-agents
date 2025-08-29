@@ -14,7 +14,7 @@ load_dotenv()
 
 from network_of_agents.simulation.controller import Controller
 from network_of_agents.llm_client import LLMClient
-from network_of_agents.visualization import save_simulation_data, print_simulation_summary, plot_mean_std, plot_individual_opinions, plot_network_snapshots, render_network_video_from_results
+from network_of_agents.visualization import save_simulation_data, plot_mean_std, plot_individual_opinions, plot_network_snapshots, render_network_video_from_results
 
 
 def load_config(config_path: str = "config.json") -> Dict[str, Any]:

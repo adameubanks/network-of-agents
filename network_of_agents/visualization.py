@@ -9,86 +9,44 @@ import json
 import os
 from datetime import datetime
 import networkx as nx
-from matplotlib.patches import Patch
-import glob
 import imageio.v2 as imageio
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.patches import Patch
+import re
 
-def plot_opinion_evolution(results: Dict[str, Any], save_path: str = None):
-    """
-    Plot opinion evolution over time.
-    
-    Args:
-        results: Simulation results dictionary
-        save_path: Optional path to save the plot
-    """
-    mean_opinions = results['mean_opinions']
-    std_opinions = results['std_opinions']
-    opinion_history = results['opinion_history']
-    topic = results.get('topic', 'Unknown Topic')
-    
-    # Check if results are partial
-    is_partial = results.get('is_partial', False)
-    if is_partial:
-        completed_timesteps = results.get('completed_timesteps', len(mean_opinions))
-        total_timesteps = results.get('total_timesteps', len(mean_opinions))
-        error_msg = results.get('error', 'Unknown error')
-        title_suffix = f" (PARTIAL - {completed_timesteps}/{total_timesteps} timesteps)"
-    else:
-        title_suffix = ""
-    
-    timesteps = range(len(mean_opinions))
-    
-    # Create figure with subplots (much taller for improved readability)
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 24), constrained_layout=True)
-    
-    # Plot 1: Mean opinion and standard deviation
-    ax1.plot(timesteps, mean_opinions, 'b-', linewidth=2, label='Mean Opinion')
-    ax1.fill_between(timesteps, 
-                     [m - s for m, s in zip(mean_opinions, std_opinions)],
-                     [m + s for m, s in zip(mean_opinions, std_opinions)],
-                     alpha=0.3, color='blue', label='±1 Std Dev')
-    
-    # Add vertical line for partial results to show where simulation stopped
-    if is_partial and len(mean_opinions) > 0:
-        ax1.axvline(x=len(mean_opinions)-1, color='red', linestyle='--', alpha=0.7, 
-                   label=f'Simulation stopped (timestep {len(mean_opinions)})')
-    
-    ax1.set_xlabel('Timestep')
-    ax1.set_ylabel('Opinion Value')
-    ax1.set_title(f'Opinion Evolution for Topic: {topic}{title_suffix}')
-    ax1.grid(True, alpha=0.3)
-    ax1.set_ylim(-1, 1)
-    
-    # Plot 2: Individual agent opinions
-    opinion_array = np.array(opinion_history)
-    for i in range(opinion_array.shape[1]):
-        ax2.plot(timesteps, opinion_array[:, i], 
-                label=f'Agent {i}', alpha=0.7, linewidth=1.5)
-    
-    # Add vertical line for partial results
-    if is_partial and len(opinion_history) > 0:
-        ax2.axvline(x=len(opinion_history)-1, color='red', linestyle='--', alpha=0.7, 
-                   label=f'Simulation stopped (timestep {len(opinion_history)})')
-    
-    ax2.set_xlabel('Timestep')
-    ax2.set_ylabel('Opinion Value')
-    ax2.set_title('Individual Agent Opinions')
-    ax2.grid(True, alpha=0.3)
-    ax2.set_ylim(-1, 1)
-    
-    # Add error message for partial results
-    if is_partial:
-        fig.suptitle(f"⚠️ PARTIAL RESULTS - Simulation interrupted due to: {error_msg}", 
-                    fontsize=12, color='red', y=0.98)
-    
-    # With constrained_layout=True above, tight_layout is unnecessary
-    
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
+def _timesteps_as_list(results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return timesteps as a list for both dict- and list-backed results."""
+    ts = results.get('timesteps', [])
+    if isinstance(ts, dict):
+        try:
+            return [ts[k] for k in sorted(ts.keys(), key=lambda x: int(x))]
+        except Exception:
+            return list(ts.values())
+    if isinstance(ts, list):
+        return ts
+    return []
 
 
+def _derive_opinion_history_from_timesteps(results: Dict[str, Any]) -> List[List[float]]:
+    """If opinion_history missing, derive it from timesteps agents' opinions."""
+    timesteps_data = _timesteps_as_list(results)
+    if not timesteps_data:
+        return []
+    # Infer number of agents from first timestep
+    first_agents = (timesteps_data[0] or {}).get('agents', [])
+    n_agents = len(first_agents)
+    history: List[List[float]] = []
+    for ts in timesteps_data:
+        opinions = [0.0] * n_agents
+        for a in ts.get('agents', []) or []:
+            try:
+                idx = int(a.get('agent_id'))
+                opinions[idx] = float(a.get('opinion', 0.0))
+            except Exception:
+                continue
+        history.append(opinions)
+    return history
+    
 def plot_mean_std(results: Dict[str, Any], save_path: str = None):
     """
     Plot mean opinion with ±1 std deviation as a single figure.
@@ -149,7 +107,7 @@ def plot_individual_opinions(results: Dict[str, Any], save_path: str = None):
         results: Simulation results dictionary
         save_path: Optional path to save the plot
     """
-    opinion_history = results['opinion_history']
+    opinion_history = _derive_opinion_history_from_timesteps(results)
     topic = results.get('topic', 'Unknown Topic')
 
     # Check if results are partial
@@ -207,7 +165,7 @@ def plot_network_snapshots(results: Dict[str, Any], graph_dir: str, file_prefix:
     """
     os.makedirs(graph_dir, exist_ok=True)
 
-    timesteps_data = results.get('timesteps', [])
+    timesteps_data = _timesteps_as_list(results)
     if not timesteps_data:
         print("No timestep graph data available; skipping network snapshots.")
         return []
@@ -308,24 +266,24 @@ def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[s
         save_path: Path to save the JSON file
         config: Configuration dictionary
     """
-    # Create a copy of results for saving (leaner, per-timestep centric)
+    # Build lean structure: timesteps as dict, random_seed nested, drop opinion_history
+    sim_params = dict(results.get('simulation_params', {}))
+    if 'random_seed' in results:
+        sim_params['random_seed'] = results['random_seed']
+    timesteps_list = results.get('timesteps', [])
+    if isinstance(timesteps_list, list):
+        ts_dict = {str(ts.get('timestep', i)): ts for i, ts in enumerate(timesteps_list) if isinstance(ts, dict)}
+    elif isinstance(timesteps_list, dict):
+        ts_dict = {str(k): v for k, v in timesteps_list.items()}
+    else:
+        ts_dict = {}
     save_data = {
         'topic': results.get('topic', 'Unknown'),
-        'mean_opinions': results['mean_opinions'],
-        'std_opinions': results['std_opinions'],
-        'opinion_history': results['opinion_history'],
-        'final_opinions': results['final_opinions'],
-        'simulation_params': results['simulation_params'],
-        'random_seed': results['random_seed'],
-        'timesteps': results.get('timesteps', [])
+        'final_opinions': results.get('final_opinions', []),
+        'timesteps': ts_dict,
+        # Move summary fields to bottom after writing file via json.dump order-preserving dict
     }
-    # Add a dict view keyed by timestep index for easier expand/collapse in viewers
-    try:
-        ts = save_data.get('timesteps', [])
-        if isinstance(ts, list):
-            save_data['timesteps_by_index'] = {str(t.get('timestep', i)): t for i, t in enumerate(ts) if isinstance(t, dict)}
-    except Exception:
-        pass
+    # Intentionally avoid duplicating timesteps as a dict; keep JSON lean
     
     # Add partial result information if applicable
     if results.get('is_partial', False):
@@ -346,80 +304,21 @@ def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[s
             }
         }
     
+    # Append summary stats at the end (mean/std/simulation_params), preserving order
+    save_data['mean_opinions'] = results.get('mean_opinions', [])
+    save_data['std_opinions'] = results.get('std_opinions', [])
+    save_data['simulation_params'] = sim_params
+
     # Save to file
     with open(save_path, 'w') as f:
         json.dump(save_data, f, indent=2)
     
 
 
-def print_simulation_summary(results: Dict[str, Any]):
-    """
-    Print a summary of simulation results.
     
-    Args:
-        results: Simulation results dictionary
-    """
-    topic = results.get('topic', 'Unknown Topic')
-    mean_opinions = results['mean_opinions']
-    std_opinions = results['std_opinions']
-    posts_history = results.get('posts_history', [])
-    interpretations_history = results.get('interpretations_history', [])
-    
-    print(f"\n{'='*60}")
-    print(f"SIMULATION SUMMARY: {topic}")
-    print(f"{'='*60}")
-    
-    print(f"Initial mean opinion: {mean_opinions[0]:.3f}")
-    print(f"Final mean opinion: {mean_opinions[-1]:.3f}")
-    print(f"Initial std dev: {std_opinions[0]:.3f}")
-    print(f"Final std dev: {std_opinions[-1]:.3f}")
-    
-    # Check convergence
-    if len(mean_opinions) > 10:
-        recent_mean = mean_opinions[-10:]
-        recent_std = std_opinions[-10:]
-        mean_change = max(recent_mean) - min(recent_mean)
-        std_change = max(recent_std) - min(recent_std)
-        
-        converged = mean_change < 0.01 and std_change < 0.01
-        print(f"Converged: {'Yes' if converged else 'No'}")
-        print(f"Mean change in last 10 timesteps: {mean_change:.3f}")
-        print(f"Std dev change in last 10 timesteps: {std_change:.3f}")
-    
-    if posts_history and len(posts_history) > 0 and len(posts_history[0]) > 0:
-        print(f"\nSample Posts (Timestep 0):")
-        for i, post in enumerate(posts_history[0]):
-            print(f"  Agent {i}: {post[:100]}...")
-    
-    if interpretations_history and len(interpretations_history) > 0 and len(interpretations_history[0]) > 0:
-        for i, interpretations in enumerate(interpretations_history[0]):
-            print(f"  Agent {i}: {[f'{x:.3f}' for x in interpretations[:3]]}...")
-    
-    print(f"{'='*60}") 
 
 
-def render_network_video(graph_dir: str, file_prefix: str, fps: int = 2, output_path: str = None) -> str:
-    """
-    Stitch timestep PNGs into an MP4 video.
-    """
-    pattern = os.path.join(graph_dir, f"{file_prefix}_timestep_*.png")
-    frames = sorted(glob.glob(pattern))
-    if not frames:
-        return ""
-    if output_path is None:
-        output_path = os.path.join(graph_dir, f"{file_prefix}.mp4")
-    with imageio.get_writer(output_path, fps=fps) as w:
-        for fp in frames:
-            w.append_data(imageio.imread(fp))
-    print(f"Video saved to: {output_path}")
-    # Remove frames after video creation
-    for fp in frames:
-        try:
-            os.remove(fp)
-        except Exception:
-            pass
-    print("Frame PNGs removed after video generation")
-    return output_path
+    
 
 
 def render_network_video_from_results(results: Dict[str, Any], graph_dir: str, file_prefix: str, fps: int = 2) -> str:
@@ -427,7 +326,7 @@ def render_network_video_from_results(results: Dict[str, Any], graph_dir: str, f
     Render network snapshots directly to an MP4 without saving PNGs.
     """
     os.makedirs(graph_dir, exist_ok=True)
-    timesteps_data = results.get('timesteps', [])
+    timesteps_data = _timesteps_as_list(results)
     if not timesteps_data:
         print("No timesteps found in results; skipping video rendering.")
         return ""
@@ -492,3 +391,55 @@ def render_network_video_from_results(results: Dict[str, Any], graph_dir: str, f
             plt.close(fig)
     print(f"Video saved to: {output_path}")
     return output_path
+
+
+    
+
+
+def find_reply_edges(results: Dict[str, Any]) -> List[Dict[str, int]]:
+    """
+    Return explicit reply edges per timestep if present; otherwise, infer from mentions.
+    Each item: {timestep, source, target}
+    """
+    timesteps_data = _timesteps_as_list(results)
+    if not timesteps_data:
+        return []
+    edges: List[Dict[str, int]] = []
+    for t_idx, ts in enumerate(timesteps_data):
+        explicit = ts.get('reply_edges')
+        if isinstance(explicit, list) and explicit:
+            for e in explicit:
+                try:
+                    edges.append({'timestep': int(t_idx), 'source': int(e.get('source')), 'target': int(e.get('target'))})
+                except Exception:
+                    continue
+        else:
+            # Fallback: infer from mentions this timestep
+            agents_info = ts.get('agents', []) or []
+            pattern = re.compile(r"\bAgent\s+(\d+)\b", flags=re.IGNORECASE)
+            for a in agents_info:
+                try:
+                    i = int(a.get('agent_id'))
+                except Exception:
+                    continue
+                post = str(a.get('post', '') or '')
+                for m in pattern.findall(post):
+                    try:
+                        j = int(m)
+                        if j != i:
+                            edges.append({'timestep': int(t_idx), 'source': i, 'target': j})
+                    except Exception:
+                        continue
+    return edges
+
+
+def print_reply_edges(results: Dict[str, Any]) -> None:
+    """Print a concise list of reply edges per timestep."""
+    edges = find_reply_edges(results)
+    if not edges:
+        print("No reply edges found.")
+        return
+    for e in edges:
+        print(f"t={e['timestep']} | Agent {e['source']} -> Agent {e['target']}")
+
+    
