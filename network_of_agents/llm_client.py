@@ -98,13 +98,14 @@ class LLMClient:
                 )
             prompts.append(p)
         responses = self._call_llm(prompts)
-        # Prefix each generated post with the agent name for downstream clarity
+        # Prefix each generated post with the actual agent_id for downstream clarity
         out: List[str] = []
         for i, r in enumerate(responses):
+            agent_id = getattr(agents[i], 'agent_id', i)
             text = r.strip() if r and isinstance(r, str) else ""
             if not text:
-                text = f"No content for agent {i} on {topic}"
-            out.append(f"Agent {i}: {text}")
+                text = f"No content for agent {agent_id} on {topic}"
+            out.append(f"Agent {agent_id}: {text}")
         return out
     
     # Neighbor-by-neighbor rating removed for simplicity

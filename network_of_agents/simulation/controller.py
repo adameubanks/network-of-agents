@@ -197,12 +197,32 @@ class Controller:
                         else:
                             neighbor_posts_per_agent = None
 
-                        posts = self.llm_client.generate_posts(current_topic, self.agents, neighbor_posts_per_agent)
-                        if len(posts) != len(self.agents):
-                            raise ValueError(f"Posts count mismatch: got {len(posts)}, expected {len(self.agents)}")
+                        # Determine which agents are connected (degree > 0) at current timestep
+                        degrees = np.sum(A_current, axis=1)
+                        connected_indices = [i for i in range(self.n_agents) if degrees[i] > 0]
 
-                        # Store generated posts immediately so next timestep can condition on them
-                        self.posts_history.append(posts)
+                        # If we have previous posts, start from them; else create placeholders
+                        if self.posts_history and len(self.posts_history[-1]) == len(self.agents):
+                            posts_full = list(self.posts_history[-1])
+                        else:
+                            posts_full = [f"Agent {i}: (no new post)" for i in range(self.n_agents)]
+
+                        # Generate only for connected agents
+                        if connected_indices:
+                            agents_subset = [self.agents[i] for i in connected_indices]
+                            if neighbor_posts_per_agent is not None:
+                                neighbor_subset = [neighbor_posts_per_agent[i] for i in connected_indices]
+                            else:
+                                neighbor_subset = None
+                            gen_subset = self.llm_client.generate_posts(current_topic, agents_subset, neighbor_subset)
+                            if len(gen_subset) != len(connected_indices):
+                                raise ValueError(f"Posts subset mismatch: got {len(gen_subset)}, expected {len(connected_indices)}")
+                            for idx, i in enumerate(connected_indices):
+                                posts_full[i] = gen_subset[idx]
+
+                        # Store posts for this timestep
+                        posts = posts_full
+                        self.posts_history.append(posts_full)
 
                         # Pairwise neighbor ratings at time k over current adjacency A[k]
                         R_pairwise, individual_ratings = self.llm_client.rate_posts_pairwise(posts, current_topic, self.agents, A_current)
