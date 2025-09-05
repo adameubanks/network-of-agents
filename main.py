@@ -14,7 +14,8 @@ load_dotenv()
 
 from network_of_agents.simulation.controller import Controller
 from network_of_agents.llm_client import LLMClient
-from network_of_agents.visualization import save_simulation_data, plot_mean_std, plot_individual_opinions, plot_network_snapshots, render_network_video_from_results
+from network_of_agents.visualization import save_simulation_data, plot_mean_std, plot_individual_opinions
+
 
 
 def load_config(config_path: str = "config.json") -> Dict[str, Any]:
@@ -108,7 +109,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
     # Create LLM client
     llm_client = create_llm_client(config)
     
-    # Setup per-run snapshot naming and possible resume
+    # Setup simple file paths
     results_dir = 'results'
     os.makedirs(results_dir, exist_ok=True)
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -116,15 +117,9 @@ def run_simulation(config: Dict[str, Any], topic: str,
     num_timesteps = sim_config['num_timesteps']
     model_name = ('no-llm' if not llm_enabled else llm_config.get('model_name', 'unknown'))
     topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
-    topic_dir = f"{results_dir}/{topic_safe}"
-    os.makedirs(topic_dir, exist_ok=True)
+    base_name = f"{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}"
 
-    # Detect resume
-    resume_cfg = config.get('resume', {})
-    resume_enabled = bool(resume_cfg.get('enabled', False))
-    resume_path = resume_cfg.get('path')
-    resume_data: Optional[Dict[str, Any]] = None
-
+    # Check for existing partial results to resume
     def _load_json(p: str) -> Optional[Dict[str, Any]]:
         try:
             with open(p, 'r') as f:
@@ -132,34 +127,28 @@ def run_simulation(config: Dict[str, Any], topic: str,
         except Exception:
             return None
 
-    if resume_enabled and not resume_path:
-        # Auto-pick latest partial for this topic
-        try:
-            candidates = [os.path.join(topic_dir, fn) for fn in os.listdir(topic_dir) if fn.endswith('.json')]
-            candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-            for p in candidates:
-                d = _load_json(p)
-                if d and d.get('is_partial'):
-                    resume_path = p; resume_data = d; break
-        except Exception:
-            pass
-    elif resume_enabled and resume_path:
-        resume_data = _load_json(resume_path)
+    # Find latest partial result to resume from
+    resume_data = None
+    resume_path = None
+    try:
+        candidates = [os.path.join(results_dir, fn) for fn in os.listdir(results_dir) if fn.endswith('.json')]
+        candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        for p in candidates:
+            data = _load_json(p)
+            if data and data.get('is_partial'):
+                resume_path = p
+                resume_data = data
+                break
+    except Exception:
+        pass
 
-    # Paths: reuse resume file if resuming, else create new
-    if resume_enabled and resume_data and resume_path:
+    # Set up simple file paths
+    if resume_data:
+        base = os.path.splitext(os.path.basename(resume_path))[0]
         run_data_path = resume_path
-        base = os.path.splitext(os.path.basename(run_data_path))[0]
-        run_plot_mean_path = os.path.join(topic_dir, f"{base}_mean_std.png")
-        run_plot_individuals_path = os.path.join(topic_dir, f"{base}_individuals.png")
-        graph_dir = topic_dir
-        run_plot_graph_prefix = f"{base}_graph"
     else:
-        run_data_path = f"{topic_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}.json"
-        run_plot_mean_path = f"{topic_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_mean_std.png"
-        run_plot_individuals_path = f"{topic_dir}/{topic_safe}_{n_agents}_{model_name}_{run_timestamp}_individuals.png"
-        graph_dir = topic_dir
-        run_plot_graph_prefix = f"{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}_graph"
+        base = base_name
+        run_data_path = f"{results_dir}/{base}.json"
 
     def on_timestep(snapshot: Dict[str, Any], timestep_index: int) -> None:
         # Ensure topic present for downstream consumers
@@ -167,19 +156,23 @@ def run_simulation(config: Dict[str, Any], topic: str,
         # Save to a single per-run file, updating it each timestep
         save_simulation_data(snapshot, run_data_path, config)
 
+    # Extract opinion dynamics configuration
+    model_name = sim_config.get('opinion_dynamics_model', 'degroot')
+    opinion_dynamics_models = config.get('opinion_dynamics_models', {})
+    opinion_dynamics_model_config = opinion_dynamics_models.get(model_name, {}).get('config', {})
+    
     # Create controller with single topic
     controller = Controller(
         n_agents=sim_config['n_agents'],
-        epsilon=sim_config.get('epsilon', 0.001),
-        theta=sim_config.get('theta', 7),
         num_timesteps=sim_config['num_timesteps'],
         llm_client=llm_client,
         topics=[topic],  # Single topic only
         random_seed=random_seed,
-
         llm_enabled=llm_enabled,
         on_timestep=on_timestep,
-        resume_data=resume_data
+        resume_data=resume_data,
+        opinion_dynamics_model=model_name,
+        opinion_dynamics_config=opinion_dynamics_model_config
     )
     
     # Run simulation
@@ -188,8 +181,18 @@ def run_simulation(config: Dict[str, Any], topic: str,
         print(f"Mode: LLM (model={llm_config.get('model_name')})")
     else:
         print(f"Mode: NO-LLM")
+    # Display model name
+    model_display_names = {'degroot': 'DeGroot-like', 'trust_distrust': 'Trust-Distrust'}
+    print(f"Opinion Dynamics Model: {model_display_names.get(model_name, model_name).upper()}")
+    
+    if model_name == 'trust_distrust':
+        print(f"  Trust threshold: {opinion_dynamics_model_config.get('trust_threshold')}")
+        print(f"  Distrust threshold: {opinion_dynamics_model_config.get('distrust_threshold')}")
+    elif model_name == 'degroot':
+        print(f"  Epsilon: {opinion_dynamics_model_config.get('epsilon')}")
+        print(f"  Theta: {opinion_dynamics_model_config.get('theta')}")
     print(f"Initial opinions: {[agent.get_opinion() for agent in controller.agents]}")
-    if resume_enabled and resume_data:
+    if resume_data:
         done = len(controller.mean_opinions)
         print(f"Resuming from timestep {done}/{num_timesteps}")
     start_time = time.time()
@@ -215,13 +218,8 @@ def run_simulation(config: Dict[str, Any], topic: str,
     print(f"Final opinion std dev for '{topic}': {final_std:.3f}")
     print(f"Final opinions: {[f'{op:.3f}' for op in final_opinions]}")
     
-    # Add topic and run paths to results
+    # Add topic to results
     results['topic'] = topic
-    results['run_data_path'] = run_data_path
-    results['run_plot_mean_path'] = run_plot_mean_path
-    results['run_plot_individuals_path'] = run_plot_individuals_path
-    results['run_graph_dir'] = graph_dir
-    results['run_plot_graph_prefix'] = run_plot_graph_prefix
     
     return results
 
@@ -254,82 +252,21 @@ def run_simulations_iteratively(config: Dict[str, Any], random_seed: Optional[in
     return all_results
 
 
-def compare_topics(all_results: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Compare results across all topics.
-    
-    Args:
-        all_results: Results for all topics
-        
-    Returns:
-        Topic comparison summary
-    """
-    comparison = {
-        'topics_analyzed': len(all_results),
-        'failed_topics': 0,
-        'topic_analyses': {}
-    }
-    
-    for topic, results in all_results.items():
-        if 'error' in results:
-            comparison['failed_topics'] += 1
-        
-        comparison['topic_analyses'][topic] = {
-            'status': 'error' if 'error' in results else 'success'
-        }
-    
-    return comparison
-
-
-def generate_default_filenames(topic: str, config: Dict[str, Any], is_partial: bool = False) -> tuple:
-    """
-    Generate default filenames for saving results.
-    
-    Args:
-        topic: Topic name
-        config: Configuration dictionary
-        is_partial: Whether these are partial results
-        
-    Returns:
-        Tuple of (data_filename, plot_filename)
-    """
-    # Create results directory if it doesn't exist
-    results_dir = 'results'
-    os.makedirs(results_dir, exist_ok=True)
-    
-    # Generate timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Extract key parameters for filename from config
-    n_agents = config['simulation']['n_agents']
-    num_timesteps = config['simulation']['num_timesteps']
-    llm_enabled = config.get('llm', {}).get('enabled', True)
-    if not llm_enabled:
-        noise_cfg = config.get('noise', {})
-        model_name = 'no-llm-noise' if noise_cfg.get('enabled', False) else 'no-llm'
-    else:
-        model_name = config.get('llm', {}).get('model_name', 'unknown')
-    
-    # Create safe topic name for filename
-    topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
-    
-    # Add partial indicator if needed
-    partial_suffix = "_PARTIAL" if is_partial else ""
-    
-    # Generate descriptive filename
-    data_filename = f"{results_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{timestamp}{partial_suffix}.json"
-    plot_filename = f"{results_dir}/{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{timestamp}{partial_suffix}.png"
-    
-    return data_filename, plot_filename
 
 
 def main():
     """Main function with configuration-driven interface."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Opinion Dynamics Simulation")
+    parser.add_argument("--config", default="config.json", help="Configuration file path")
+    args = parser.parse_args()
+    
     # Load configuration
     try:
-        config = load_config('config.json')
+        config = load_config(args.config)
     except FileNotFoundError:
-        print(f"Error: Configuration file 'config.json' not found")
+        print(f"Error: Configuration file '{args.config}' not found")
         return
     except json.JSONDecodeError as e:
         print(f"Error: Invalid JSON in configuration file: {e}")
@@ -343,66 +280,25 @@ def main():
     print("OPINION DYNAMICS SIMULATION")
     print("=" * 50)
     
-    # Always run all topics iteratively
+    # Run all topics
     all_results = run_simulations_iteratively(config, random_seed=None)
 
     print("\n" + "=" * 50)
-    print("ALL TOPICS SIMULATION COMPLETED")
+    print("SIMULATION COMPLETED")
     print("=" * 50)
 
-    # Compare topics
-    comparison = compare_topics(all_results)
+    # Simple summary
+    successful = sum(1 for r in all_results.values() if 'error' not in r)
+    failed = len(all_results) - successful
+    print(f"Topics completed: {successful}")
+    print(f"Topics failed: {failed}")
 
-    print(f"Topics analyzed: {comparison['topics_analyzed']}")
-    print(f"Topics failed: {comparison['failed_topics']}")
-
-    print("\nDetailed Topic Analysis:")
-    print("-" * 30)
-    for topic, analysis in comparison['topic_analyses'].items():
-        print(f"\nTopic: {topic}")
-        if 'error' in analysis:
-            print(f"  Error: {analysis['error']}")
-        else:
-            print(f"  Status: Success")
-
-    # Save data and generate plots for each topic
+    # Generate simple plots for successful runs
     for topic, results in all_results.items():
         if 'error' not in results:
-            # Prefer per-run paths from each run; fallback to generated names if absent
-            data_path = results.get('run_data_path')
-            plot_mean_path = results.get('run_plot_mean_path')
-            plot_individuals_path = results.get('run_plot_individuals_path')
-            # Prefer graph dir and prefix from results if present
-            graph_dir_local = results.get('run_graph_dir')
-            run_plot_graph_prefix_local = results.get('run_plot_graph_prefix')
-            if not data_path or not plot_mean_path or not plot_individuals_path or not graph_dir_local or not run_plot_graph_prefix_local:
-                # Fallback: reconstruct topic_dir and paths
-                llm_cfg = config.get('llm', {})
-                llm_on = llm_cfg.get('enabled', True)
-                if not llm_on:
-                    model = 'no-llm'
-                else:
-                    model = llm_cfg.get('model_name', 'unknown')
-                sim_cfg = config['simulation']
-                n = sim_cfg['n_agents']
-                T = sim_cfg['num_timesteps']
-                topic_safe_local = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
-                results_dir_local = 'results'
-                topic_dir_local = f"{results_dir_local}/{topic_safe_local}"
-                os.makedirs(topic_dir_local, exist_ok=True)
-                if not graph_dir_local:
-                    graph_dir_local = topic_dir_local
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                data_path = data_path or f"{topic_dir_local}/{topic_safe_local}_{n}_{T}_{model}_{timestamp}.json"
-                plot_mean_path = plot_mean_path or f"{topic_dir_local}/{topic_safe_local}_{n}_{T}_{model}_{timestamp}_mean_std.png"
-                plot_individuals_path = plot_individuals_path or f"{topic_dir_local}/{topic_safe_local}_{n}_{T}_{model}_{timestamp}_individuals.png"
-                run_plot_graph_prefix_local = run_plot_graph_prefix_local or f"{topic_safe_local}_{n}_{T}_{model}_{timestamp}_graph"
-            save_simulation_data(results, data_path, config)
-            plot_mean_std(results, save_path=plot_mean_path)
-            plot_individual_opinions(results, save_path=plot_individuals_path)
-            # Graph snapshots per timestep
-            # Render video directly from results (no PNGs). 0.5s per frame (fps=2)
-            render_network_video_from_results(results, graph_dir=graph_dir_local, file_prefix=run_plot_graph_prefix_local, fps=2)
+            base_name = f"{topic.replace(' ', '_')}_{config['simulation']['n_agents']}_{config['simulation']['num_timesteps']}"
+            plot_mean_std(results, save_path=f"results/{base_name}_mean_std.png")
+            plot_individual_opinions(results, save_path=f"results/{base_name}_individuals.png")
 
 
 if __name__ == "__main__":

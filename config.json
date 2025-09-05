@@ -1,21 +1,47 @@
 {
   "simulation": {
     "n_agents": 50,
-    "epsilon": 0.01,
-    "theta": 7,
     "num_timesteps": 50,
-    "random_seed": 42
+    "random_seed": 42,
+    "opinion_dynamics_model": "degroot"
   },
   "llm": {
     "enabled": true,
     "api_key_env": "OPENAI_API_KEY",
     "model_name": "gpt-5-nano"
   },
-  "resume": { "enabled": true },
   "topics": [
     "hanging the 10 commandments in the classroom",
     "banning the 10 commandments from being hung in the classroom",
     "hanging a pride flag in the classroom",
-    "banning the pride flag from being hung in the classroom"
-  ]
+    "banning the pride flag from being hung in the classroom",
+    "circles vs triangles",
+    "triangles vs circles", 
+    "liberals vs conservatives",
+    "conservatives vs liberals",
+    "israel vs palestine",
+    "palestine vs israel",
+    "michael jordan is the goat vs lebron james is the goat",
+    "lebron james is the goat vs michael jordan is the goat",
+    "vanilla ice cream vs chocolate ice cream",
+    "chocolate ice cream vs vanilla ice cream"
+  ],
+  "opinion_dynamics_models": {
+    "degroot": {
+      "model": "degroot",
+      "config": {
+        "epsilon": 0.01,
+        "theta": 7
+      }
+    },
+    "trust_distrust": {
+      "model": "trust_distrust", 
+      "config": {
+        "trust_threshold": 0.25,
+        "distrust_threshold": 0.75,
+        "diffusion_rate": 0.25,
+        "solicitation_rate": 5
+      }
+    }
+  }
 }
