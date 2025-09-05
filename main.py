@@ -109,14 +109,16 @@ def run_simulation(config: Dict[str, Any], topic: str,
     # Create LLM client
     llm_client = create_llm_client(config)
     
-    # Setup simple file paths
+    # Setup topic-organized file paths
     results_dir = 'results'
-    os.makedirs(results_dir, exist_ok=True)
+    topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
+    topic_dir = os.path.join(results_dir, topic_safe)
+    os.makedirs(topic_dir, exist_ok=True)
+    
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     n_agents = sim_config['n_agents']
     num_timesteps = sim_config['num_timesteps']
     model_name = ('no-llm' if not llm_enabled else llm_config.get('model_name', 'unknown'))
-    topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
     base_name = f"{topic_safe}_{n_agents}_{num_timesteps}_{model_name}_{run_timestamp}"
 
     # Check for existing partial results to resume
@@ -127,15 +129,16 @@ def run_simulation(config: Dict[str, Any], topic: str,
         except Exception:
             return None
 
-    # Find latest partial result to resume from
+    # Find partial result for THIS specific topic to resume from
     resume_data = None
     resume_path = None
     try:
-        candidates = [os.path.join(results_dir, fn) for fn in os.listdir(results_dir) if fn.endswith('.json')]
-        candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-        for p in candidates:
+        # Look for partial results in the topic-specific directory
+        topic_candidates = [os.path.join(topic_dir, fn) for fn in os.listdir(topic_dir) if fn.endswith('.json')]
+        topic_candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        for p in topic_candidates:
             data = _load_json(p)
-            if data and data.get('is_partial'):
+            if data and data.get('is_partial') and data.get('topic') == topic:
                 resume_path = p
                 resume_data = data
                 break
@@ -148,7 +151,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
         run_data_path = resume_path
     else:
         base = base_name
-        run_data_path = f"{results_dir}/{base}.json"
+        run_data_path = f"{topic_dir}/{base}.json"
 
     def on_timestep(snapshot: Dict[str, Any], timestep_index: int) -> None:
         # Ensure topic present for downstream consumers
@@ -296,9 +299,13 @@ def main():
     # Generate simple plots for successful runs
     for topic, results in all_results.items():
         if 'error' not in results:
-            base_name = f"{topic.replace(' ', '_')}_{config['simulation']['n_agents']}_{config['simulation']['num_timesteps']}"
-            plot_mean_std(results, save_path=f"results/{base_name}_mean_std.png")
-            plot_individual_opinions(results, save_path=f"results/{base_name}_individuals.png")
+            topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
+            topic_dir = os.path.join('results', topic_safe)
+            os.makedirs(topic_dir, exist_ok=True)
+            
+            base_name = f"{topic_safe}_{config['simulation']['n_agents']}_{config['simulation']['num_timesteps']}"
+            plot_mean_std(results, save_path=f"{topic_dir}/{base_name}_mean_std.png")
+            plot_individual_opinions(results, save_path=f"{topic_dir}/{base_name}_individuals.png")
 
 
 if __name__ == "__main__":
