@@ -11,10 +11,10 @@
     "model_name": "gpt-5-nano"
   },
   "topics": [
-    "hanging the 10 commandments in the classroom",
-    "banning the 10 commandments from being hung in the classroom",
-    "hanging a pride flag in the classroom",
-    "banning the pride flag from being hung in the classroom",
+    "hanging the 10 commandments in the classroom vs banning the 10 commandments from being hung in the classroom",
+    "banning the 10 commandments from being hung in the classroom vs hanging the 10 commandments in the classroom",
+    "hanging a pride flag in the classroom vs banning the pride flag from being hung in the classroom",
+    "banning the pride flag from being hung in the classroom vs hanging a pride flag in the classroom",
     "circles vs triangles",
     "triangles vs circles", 
     "liberals vs conservatives",
@@ -27,11 +27,17 @@
     "chocolate ice cream vs vanilla ice cream"
   ],
   "opinion_dynamics_models": {
-    "degroot": {
-      "model": "degroot",
+    "updating_weights": {
+      "model": "updating_weights",
       "config": {
         "epsilon": 0.01,
         "theta": 7
+      }
+    },
+    "degroot": {
+      "model": "degroot",
+      "config": {
+        "epsilon": 0.1
       }
     },
     "trust_distrust": {

@@ -11,7 +11,7 @@ import logging
 from ..agent import Agent
 from ..llm_client import LLMClient
 from ..network.graph_model import NetworkModel
-from ..core.mathematics import update_opinions, update_edges
+from ..core.mathematics import update_opinions, update_opinions_pure_degroot, update_edges, create_connected_degroot_network
 from ..core.social_dynamics import (
     initialize_susceptibility_matrix,
     apply_social_dynamics,
@@ -108,10 +108,16 @@ class Controller:
 
         # Initialize network topology based on initial opinions (unless resuming)
         if resume_data is None:
-            X0_agent = self._get_opinion_matrix()
-            X0_math = self._to_math_domain(X0_agent)
-            A0 = update_edges(self.network.get_adjacency_matrix(), X0_math, self.theta, self.epsilon, update_probability=1.0)
-            self.network.adjacency_matrix = A0
+            if self.opinion_dynamics_model == 'degroot':
+                # Create a connected network for DeGroot model
+                A0 = create_connected_degroot_network(self.n_agents, connectivity=0.6)
+                self.network.adjacency_matrix = A0
+            elif self.opinion_dynamics_model == 'updating_weights':
+                X0_agent = self._get_opinion_matrix()
+                X0_math = self._to_math_domain(X0_agent)
+                A0 = update_edges(self.network.get_adjacency_matrix(), X0_math, self.theta, self.epsilon, update_probability=1.0)
+                self.network.adjacency_matrix = A0
+            # For trust_distrust model, use the initial adjacency matrix as-is
         
         # Simulation state
         self.is_running = False
@@ -281,8 +287,8 @@ class Controller:
                 X_next_agent, A_next = self._apply_trust_distrust_dynamics(X_current, A_current, posts)
                 self.network.update_adjacency_matrix(A_next)
                 self._update_agent_opinions(X_next_agent)
-            else:
-                # Use DeGroot model
+            elif self.opinion_dynamics_model == 'updating_weights':
+                # Use updating weights model (original degroot with network evolution)
                 if self.llm_enabled:
                     X_interpreted = np.array(neighbor_opinions)
                 else:
@@ -294,6 +300,20 @@ class Controller:
                 self.network.update_adjacency_matrix(A_next)
                 X_next_agent = self._to_agent_domain(X_next_math)
                 self._update_agent_opinions(X_next_agent)
+            elif self.opinion_dynamics_model == 'degroot':
+                # Use pure DeGroot model (fixed network, only opinion evolution)
+                if self.llm_enabled:
+                    X_interpreted = np.array(neighbor_opinions)
+                else:
+                    X_interpreted = X_current.copy()
+
+                X_for_math = self._to_math_domain(X_interpreted)
+                X_next_math = update_opinions_pure_degroot(X_for_math, A_current, self.epsilon)
+                # Network remains unchanged in pure DeGroot model
+                X_next_agent = self._to_agent_domain(X_next_math)
+                self._update_agent_opinions(X_next_agent)
+            else:
+                raise ValueError(f"Unknown opinion dynamics model: {self.opinion_dynamics_model}")
 
             # Step 6: Store current state
             if self.llm_enabled:

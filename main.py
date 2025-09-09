@@ -185,13 +185,19 @@ def run_simulation(config: Dict[str, Any], topic: str,
     else:
         print(f"Mode: NO-LLM")
     # Display model name
-    model_display_names = {'degroot': 'DeGroot-like', 'trust_distrust': 'Trust-Distrust'}
+    model_display_names = {
+        'degroot': 'Pure DeGroot', 
+        'updating_weights': 'Updating Weights',
+        'trust_distrust': 'Trust-Distrust'
+    }
     print(f"Opinion Dynamics Model: {model_display_names.get(model_name, model_name).upper()}")
     
     if model_name == 'trust_distrust':
         print(f"  Trust threshold: {opinion_dynamics_model_config.get('trust_threshold')}")
         print(f"  Distrust threshold: {opinion_dynamics_model_config.get('distrust_threshold')}")
     elif model_name == 'degroot':
+        print(f"  Epsilon: {opinion_dynamics_model_config.get('epsilon')}")
+    elif model_name == 'updating_weights':
         print(f"  Epsilon: {opinion_dynamics_model_config.get('epsilon')}")
         print(f"  Theta: {opinion_dynamics_model_config.get('theta')}")
     print(f"Initial opinions: {[agent.get_opinion() for agent in controller.agents]}")

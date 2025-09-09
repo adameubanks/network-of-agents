@@ -146,6 +146,81 @@ def calculate_S_hat(X_k: np.ndarray, theta: int, epsilon: float) -> np.ndarray:
     return S_hat_k
 
 
+def update_opinions_pure_degroot(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
+    """
+    Pure DeGroot opinion update: X[k+1] = W X[k]
+    
+    Implements the classic DeGroot model where:
+    - W is a fixed row-stochastic matrix derived from the adjacency matrix A
+    - W[i,j] = A[i,j] / (Σ_k A[i,k] + ε) for numerical stability
+    - No network evolution occurs (A remains constant)
+    
+    Mathematical foundation:
+    The DeGroot model assumes agents update their opinions by taking a weighted
+    average of their neighbors' opinions, where weights are proportional to
+    connection strength and normalized to sum to 1 for each agent.
+    
+    Convergence properties:
+    - If the network is strongly connected and aperiodic, opinions converge
+    - The consensus value is a weighted average of initial opinions
+    - Convergence rate depends on the second largest eigenvalue of W
+    
+    Args:
+        X_k: Opinion vector at time k (single topic)
+        A_k: Fixed adjacency matrix (symmetric, hollow)
+        epsilon: Small positive parameter for numerical stability
+        
+    Returns:
+        Updated opinion vector X[k+1]
+    """
+    n = A_k.shape[0]
+    
+    # Create row-stochastic weight matrix W from adjacency matrix A
+    # For isolated nodes (degree 0), keep opinion unchanged (W[i,i] = 1)
+    # For connected nodes, W[i,j] = A[i,j] / Σ_k A[i,k]
+    row_sums = A_k.sum(axis=1, keepdims=True)
+    
+    # Initialize W as identity matrix (isolated nodes keep their opinion)
+    W = np.eye(n)
+    
+    # For connected nodes, use adjacency-based weights
+    connected_mask = row_sums.flatten() > 0
+    if np.any(connected_mask):
+        W[connected_mask] = A_k[connected_mask] / row_sums[connected_mask]
+    
+    # Ensure W is row-stochastic (each row sums to 1)
+    assert np.allclose(W.sum(axis=1), 1.0, atol=1e-10), "W is not row-stochastic"
+    
+    # DeGroot update: X[k+1] = W X[k]
+    X_next = np.dot(W, X_k)
+    
+    return X_next
+
+
+def create_connected_degroot_network(n_agents: int, connectivity: float = 0.3) -> np.ndarray:
+    """
+    Create a connected network for DeGroot model.
+    
+    Args:
+        n_agents: Number of agents
+        connectivity: Target connectivity (0.0 to 1.0)
+        
+    Returns:
+        Symmetric, hollow adjacency matrix
+    """
+    # Start with empty network
+    A = np.zeros((n_agents, n_agents))
+    
+    # Add edges with probability based on connectivity
+    for i in range(n_agents):
+        for j in range(i + 1, n_agents):
+            if np.random.rand() < connectivity:
+                A[i, j] = 1
+                A[j, i] = 1
+    
+    return A
+
+
 def update_edges(A_k: np.ndarray, X_k: np.ndarray, theta: int, epsilon: float, update_probability: float = 1.0) -> np.ndarray:
     """
     Lazy edge update per Eq. (4): for each unordered pair (i<j), with
