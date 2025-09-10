@@ -67,6 +67,11 @@ class Controller:
         self.llm_enabled = llm_enabled
         self.on_timestep = on_timestep
         
+        # Metrics for comparing LLM vs pure DeGroot
+        self.llm_opinion_history = []
+        self.pure_degroot_opinion_history = []
+        self.api_call_count = 0
+        
         # Opinion dynamics model configuration
         self.opinion_dynamics_model = opinion_dynamics_model
         if opinion_dynamics_config is None:
@@ -110,7 +115,7 @@ class Controller:
         if resume_data is None:
             if self.opinion_dynamics_model == 'degroot':
                 # Create a connected network for DeGroot model
-                A0 = create_connected_degroot_network(self.n_agents, connectivity=0.6)
+                A0 = create_connected_degroot_network(self.n_agents, connectivity=0.05)
                 self.network.adjacency_matrix = A0
             elif self.opinion_dynamics_model == 'updating_weights':
                 X0_agent = self._get_opinion_matrix()
@@ -118,6 +123,15 @@ class Controller:
                 A0 = update_edges(self.network.get_adjacency_matrix(), X0_math, self.theta, self.epsilon, update_probability=1.0)
                 self.network.adjacency_matrix = A0
             # For trust_distrust model, use the initial adjacency matrix as-is
+        
+        # Generate initial graph visualization if LLM is enabled
+        if self.llm_enabled:
+            from ..visualization import plot_initial_network_graph
+            initial_opinions = np.array([agent.get_opinion() for agent in self.agents])
+            initial_adjacency = self.network.get_adjacency_matrix()
+            plot_initial_network_graph(initial_adjacency, initial_opinions, 
+                                     self.topics[0] if self.topics else "Unknown Topic",
+                                     save_path=f"initial_network_graph_{self.n_agents}_agents.png")
         
         # Simulation state
         self.is_running = False
@@ -186,6 +200,36 @@ class Controller:
             agents.append(agent)
         
         return agents
+    
+    def _calculate_pure_degroot_opinions(self, X_current: np.ndarray, A_current: np.ndarray) -> np.ndarray:
+        """Calculate what pure DeGroot would produce for comparison with LLM results."""
+        X_for_math = self._to_math_domain(X_current)
+        X_next_math = update_opinions_pure_degroot(X_for_math, A_current, self.epsilon)
+        return self._to_agent_domain(X_next_math)
+    
+    def _calculate_llm_degroot_divergence(self, llm_opinions: np.ndarray, pure_opinions: np.ndarray) -> Dict[str, float]:
+        """Calculate divergence metrics between LLM and pure DeGroot results."""
+        if len(llm_opinions) != len(pure_opinions):
+            return {"error": "Opinion vector length mismatch"}
+        
+        # Mean Absolute Error
+        mae = np.mean(np.abs(llm_opinions - pure_opinions))
+        
+        # Root Mean Square Error
+        rmse = np.sqrt(np.mean((llm_opinions - pure_opinions) ** 2))
+        
+        # Maximum Absolute Error
+        max_error = np.max(np.abs(llm_opinions - pure_opinions))
+        
+        # Correlation coefficient
+        correlation = np.corrcoef(llm_opinions, pure_opinions)[0, 1] if len(llm_opinions) > 1 else 0.0
+        
+        return {
+            "mae": float(mae),
+            "rmse": float(rmse), 
+            "max_error": float(max_error),
+            "correlation": float(correlation)
+        }
     
     def run_simulation(self, progress_bar: bool = True) -> Dict[str, Any]:
         """
@@ -304,6 +348,29 @@ class Controller:
                 # Use pure DeGroot model (fixed network, only opinion evolution)
                 if self.llm_enabled:
                     X_interpreted = np.array(neighbor_opinions)
+                    
+                    # Calculate what pure DeGroot would produce for comparison
+                    pure_degroot_opinions = self._calculate_pure_degroot_opinions(X_current, A_current)
+                    self.pure_degroot_opinion_history.append(pure_degroot_opinions.copy())
+                    
+                    # Calculate divergence metrics
+                    divergence_metrics = self._calculate_llm_degroot_divergence(X_interpreted, pure_degroot_opinions)
+                    
+                    # Count API calls (post generation + rating)
+                    if posts is not None:
+                        # Count post generation calls (one per connected agent)
+                        connected_agents = np.sum(A_current.sum(axis=1) > 0)
+                        self.api_call_count += connected_agents
+                        
+                        # Count rating calls (one per connected pair)
+                        rating_calls = 0
+                        for i in range(self.n_agents):
+                            neighbors = np.where(A_current[i] == 1)[0]
+                            rating_calls += len(neighbors)
+                        self.api_call_count += rating_calls
+                        
+                        logger.info(f"Timestep {timestep}: {connected_agents} post generation calls, {rating_calls} rating calls, "
+                                  f"MAE: {divergence_metrics['mae']:.4f}, Correlation: {divergence_metrics['correlation']:.4f}")
                 else:
                     X_interpreted = X_current.copy()
 
@@ -312,6 +379,10 @@ class Controller:
                 # Network remains unchanged in pure DeGroot model
                 X_next_agent = self._to_agent_domain(X_next_math)
                 self._update_agent_opinions(X_next_agent)
+                
+                # Store LLM opinions for comparison
+                if self.llm_enabled:
+                    self.llm_opinion_history.append(X_interpreted.copy())
             else:
                 raise ValueError(f"Unknown opinion dynamics model: {self.opinion_dynamics_model}")
 
@@ -646,6 +717,18 @@ class Controller:
         if self.llm_enabled:
             results['posts_history'] = self.posts_history
             results['interpretations_history'] = self.interpretations_history
+            
+            # Add LLM vs Pure DeGroot comparison metrics
+            if self.opinion_dynamics_model == 'degroot' and len(self.llm_opinion_history) > 0:
+                results['llm_vs_pure_degroot'] = {
+                    'llm_opinion_history': [op.tolist() for op in self.llm_opinion_history],
+                    'pure_degroot_opinion_history': [op.tolist() for op in self.pure_degroot_opinion_history],
+                    'api_call_count': self.api_call_count,
+                    'final_divergence': self._calculate_llm_degroot_divergence(
+                        self.llm_opinion_history[-1], 
+                        self.pure_degroot_opinion_history[-1]
+                    ) if len(self.llm_opinion_history) > 0 else {}
+                }
         return results
     
     def get_current_state(self) -> Dict[str, Any]:

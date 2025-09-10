@@ -396,6 +396,96 @@ def render_network_video_from_results(results: Dict[str, Any], graph_dir: str, f
     
 
 
+def plot_initial_network_graph(adjacency_matrix: np.ndarray, opinions: np.ndarray, 
+                              topic: str, save_path: str = None) -> None:
+    """
+    Plot the initial network graph at timestep 0 to show sparsity/density.
+    
+    Args:
+        adjacency_matrix: Network adjacency matrix
+        opinions: Initial opinion values for each agent
+        topic: Topic being discussed
+        save_path: Optional path to save the plot
+    """
+    import networkx as nx
+    
+    n_agents = adjacency_matrix.shape[0]
+    G = nx.Graph()
+    G.add_nodes_from(range(n_agents))
+    
+    # Add edges based on adjacency matrix
+    for i in range(n_agents):
+        for j in range(i+1, n_agents):
+            if adjacency_matrix[i, j] == 1:
+                G.add_edge(i, j)
+    
+    # Calculate network statistics
+    num_edges = G.number_of_edges()
+    max_possible_edges = n_agents * (n_agents - 1) // 2
+    density = num_edges / max_possible_edges if max_possible_edges > 0 else 0
+    avg_degree = 2 * num_edges / n_agents if n_agents > 0 else 0
+    
+    # Create layout based on opinions
+    pos = {}
+    for i in range(n_agents):
+        # Position nodes by opinion (x-axis) and add some y-jitter
+        y_jitter = np.random.normal(0, 0.1)
+        pos[i] = (opinions[i], y_jitter)
+    
+    # Color nodes by opinion
+    colors = []
+    for val in opinions:
+        if val > 0.0:
+            colors.append('#2ca02c')  # green
+        elif val < 0.0:
+            colors.append('#d62728')  # red
+        else:
+            colors.append('#7f7f7f')  # gray
+    
+    plt.figure(figsize=(14, 10))
+    
+    # Draw the network
+    nx.draw_networkx_edges(G, pos, edge_color='#cccccc', width=1.0, alpha=0.6)
+    nx.draw_networkx_nodes(G, pos, node_color=colors, node_size=400, 
+                          edgecolors='black', linewidths=0.5)
+    
+    # Add node labels
+    nx.draw_networkx_labels(G, pos, {i: str(i) for i in range(n_agents)}, 
+                           font_size=8, font_weight='bold')
+    
+    # Create legend
+    legend_handles = [
+        Patch(facecolor='#2ca02c', edgecolor='black', label='Opinion > 0'),
+        Patch(facecolor='#d62728', edgecolor='black', label='Opinion < 0'),
+        Patch(facecolor='#7f7f7f', edgecolor='black', label='Opinion = 0')
+    ]
+    plt.legend(handles=legend_handles, loc='upper right')
+    
+    # Add network statistics as text
+    stats_text = f"""Network Statistics:
+• Agents: {n_agents}
+• Edges: {num_edges}
+• Density: {density:.3f}
+• Avg Degree: {avg_degree:.1f}
+• Max Possible Edges: {max_possible_edges}"""
+    
+    plt.text(0.02, 0.98, stats_text, transform=plt.gca().transAxes, 
+             verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    
+    plt.title(f"Initial Network Graph - Topic: {topic}\n"
+              f"Network Density: {density:.1%} | Average Degree: {avg_degree:.1f}")
+    plt.xlabel("Opinion Value (-1 to 1)")
+    plt.ylabel("Random Y-offset")
+    plt.axis('off')
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Initial network graph saved to: {save_path}")
+    else:
+        plt.show()
+
+
 def find_reply_edges(results: Dict[str, Any]) -> List[Dict[str, int]]:
     """
     Return explicit reply edges per timestep if present; otherwise, infer from mentions.
