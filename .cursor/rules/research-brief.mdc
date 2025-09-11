@@ -1,0 +1,31 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+**Project Context (for Cursor)**
+
+I am working on a research paper with BYU Idea Labs under Professor Sean Warnick on *algorithmic fidelity* of large language models (LLMs). The goal is to test whether LLMs can simulate human-like opinion dynamics in a way consistent with classical models like DeGroot.
+
+The experimental setup is:
+
+* Each agent’s opinion is represented on a **numeric scale**. We ask the LLM to generate a post expressing an opinion given a value in **\[-1, 1]** (where -1 = strongly opposed, +1 = strongly in favor).
+* For comparison with standard DeGroot opinion dynamics, we **convert this to \[0, 1]** internally, since DeGroot assumes opinions in \[0,1].
+* After generating a post, the LLM (either the same or another instance) is asked to **rate the post** on the same numeric scale.
+* We iterate this generate → rate → update process across agents, forming a multi-agent system analogous to DeGroot or French opinion dynamics.
+
+If LLMs had perfect algorithmic fidelity, the generate–rate loop would preserve the numeric opinion across iterations. In practice:
+
+* On some topics (e.g., slavery), all runs converge to strong disapproval, regardless of starting opinion.
+* On others (e.g., Israel–Palestine), opinions remain closer to neutral with mild bias.
+* For some (e.g., Pride flag vs Ten Commandments in classrooms), strong directional bias appears.
+* Flipping the axis (−1 = pro vs anti) sometimes changes outcomes, showing asymmetries.
+* In certain debates (e.g., LeBron vs Jordan), the result depends on ordering of the options rather than neutrality.
+
+The research goal of my paper is to analyze:
+
+1. **How well LLMs preserve opinion dynamics** compared to mathematical models (e.g., convergence, equilibrium points, operator estimates).
+2. **Where and why failures occur** (biases, asymmetries, refusal filters).
+3. **Best practices for using LLMs in opinion-dynamics simulations**, including how to set up scales, raters, and sampling.
+
+I already have code that runs these simulations, produces opinion trajectories, and logs posts. I now need to turn this into a rigorous conference paper: define methods and metrics, analyze the results (fit update matrices, compare with DeGroot predictions, measure bias and variance), and write Introduction, Methods, Results, and Discussion sections.

@@ -1,0 +1,15 @@
+Topic,Bias,Fixed-Point Error,LLM Mean,DeGroot Mean,LLM Std,DeGroot Std,LLM Converged,DeGroot Converged
+conservatives vs liberals,-0.5410,4.2692,-0.6576,-0.1166,0.2548,0.1027,No,No
+liberals vs conservatives,-0.6820,5.0336,-0.7986,-0.1166,0.1740,0.1027,No,No
+palestine vs israel,-0.2812,2.5860,-0.3978,-0.1166,0.2355,0.1027,No,No
+israel vs palestine,0.3859,3.3121,0.2693,-0.1166,0.3053,0.1027,No,No
+michael jordan is the goat vs lebron james is the goat,-0.6377,4.7406,-0.7543,-0.1166,0.1819,0.1027,No,No
+lebron james is the goat vs michael jordan is the goat,-0.6717,5.0298,-0.7883,-0.1166,0.2097,0.1027,No,No
+banning the 10 commandments from being hung in the classroom vs hanging the 10 commandments in the classroom,-0.7814,5.7861,-0.8980,-0.1166,0.2112,0.1027,No,No
+hanging the 10 commandments in the classroom vs banning the 10 commandments from being hung in the classroom,-0.3945,3.0412,-0.5111,-0.1166,0.1656,0.1027,No,No
+banning the pride flag from being hung in the classroom vs hanging a pride flag in the classroom,-0.5952,4.4213,-0.7118,-0.1166,0.1677,0.1027,No,No
+hanging a pride flag in the classroom vs banning the pride flag from being hung in the classroom,-0.8036,5.9364,-0.9202,-0.1166,0.2094,0.1027,No,No
+triangles vs circles,0.6809,5.1729,0.5643,-0.1166,0.3231,0.1027,No,No
+circles vs triangles,-0.3039,2.8999,-0.4205,-0.1166,0.2764,0.1027,No,No
+chocolate ice cream vs vanilla ice cream,0.8386,6.2871,0.7220,-0.1166,0.3537,0.1027,No,No
+vanilla ice cream vs chocolate ice cream,0.8865,6.5433,0.7699,-0.1166,0.3305,0.1027,No,No
