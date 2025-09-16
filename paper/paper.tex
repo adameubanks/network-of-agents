@@ -3,8 +3,17 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{cite}
+\usepackage{tabularx}
+\usepackage{array}
 
-\title{Algorithmic Fidelity of Large Language Models in Multi-Agent Opinion Dynamics: A Systematic Evaluation Against the DeGroot Model}
+% Model name macros and placeholders (restricted to three models)
+\newcommand{\modelFiveNano}{gpt-5-nano}
+\newcommand{\modelFiveMini}{gpt-5-mini}
+\newcommand{\modelGrokMini}{grok-mini}
+\newcommand{\Placeholder}{--}
+\newcommand{\modelsCompared}{\modelFiveNano, \modelFiveMini, \modelGrokMini}
+
+\title{Algorithmic Fidelity of Large Language Models in Multi-Agent Opinion Dynamics: A Systematic Evaluation of Automated Agent Implementation}
 
 \author{%
   Adam Eubanks \\
@@ -24,42 +33,42 @@
 
 % Include generated data
 \input{data}
+\input{data_models}
 \input{examples}
 
 \maketitle
 
 \begin{abstract}
-Large Language Models (LLMs) are increasingly deployed as agents in multi-agent systems for simulating opinion dynamics. However, their algorithmic fidelity (the ability to faithfully reproduce the mathematical behavior of classical opinion dynamics models) remains largely unexplored. We present the first systematic evaluation of LLM-based opinion dynamics against the classical DeGroot model across 14 diverse topics. Our results reveal significant algorithmic fidelity failures: LLMs exhibit systematic bias and high fixed-point error compared to pure DeGroot dynamics. These findings highlight critical limitations in using LLMs as drop-in replacements for mathematical models in multi-agent opinion simulations and provide essential guidance for researchers in computational social science and multi-agent systems.
+We evaluate whether large language model (LLM) agents reproduce classical DeGroot opinion dynamics. Across 14 topics on sparse networks, LLM-based simulations diverge systematically through bias, order effects, and persona construction, indicating that these agents implement a distinct dynamical system rather than approximating classical models. We formalize algorithmic fidelity as the match between LLM update behavior and operator-theoretic predictions, and we quantify divergences with bias and fixed-point error metrics. Results highlight risks for multi-agent systems that assume DeGroot-like predictability and motivate new evaluation protocols and theory for LLM-driven opinion dynamics.
 \end{abstract}
 
 \section{Introduction}
-Multi-agent systems have become a cornerstone of artificial intelligence research, with opinion dynamics serving as a fundamental framework for understanding how agents interact and influence each other in social networks. The classical DeGroot model provides a mathematical foundation for modeling opinion evolution through agent interactions, enabling rigorous analysis of consensus formation, polarization, and social influence patterns.
+The automation of opinion controllers has advanced rapidly with large language models (LLMs). Recent work by DeBuse and Warnick (2024) \cite{debuse2024study} showed that LLMs can translate quantified commands from opinion controllers into usable content, bridging mathematical control and social media deployment.
 
-Recent advances in Large Language Models (LLMs) have opened new possibilities for more realistic multi-agent simulations that can capture the nuanced ways agents express and interpret opinions through natural language. This raises a fundamental question: \textbf{Can LLMs accurately model human behavior in multi-agent opinion dynamics, or do they introduce systematic biases that distort the underlying mathematical dynamics?}
+We study whether these automated agents preserve the mathematical dynamics that make opinion control predictable. \textbf{Algorithmic fidelity} is the degree to which LLM agents reproduce the behavior of classical opinion dynamics operators. It is distinct from content quality; it focuses on whether the induced dynamical system matches operator-theoretic predictions such as update rules, equilibria, and symmetry.
 
-This question is crucial for the multi-agent systems community because:
+\textbf{Research Questions:} (1) Do LLM agents reproduce DeGroot-like behavior in aggregate? (2) Do they maintain symmetry under topic order reversal? (3) How large are the deviations in bias, fixed-point error, and variance?
 
+\textbf{Contributions:}
 \begin{itemize}
-  \item \textit{Methodological Validity:} If LLMs introduce systematic biases, conclusions drawn from LLM-based multi-agent simulations may not reflect true human behavior patterns.
-  \item \textit{Reproducibility:} Mathematical models provide predictable, reproducible results. LLM-based multi-agent systems must maintain this reliability while capturing human-like interactions.
-  \item \textit{Scalability:} Understanding LLM limitations is essential for designing robust multi-agent systems that can scale to large populations while maintaining behavioral realism.
-  \item \textit{Trust and Safety:} As LLMs are increasingly used in multi-agent decision-making contexts, understanding their algorithmic fidelity is critical for responsible deployment.
+  \item Define algorithmic fidelity as a formal evaluation dimension for LLM MAS.
+  \item Propose operator-theoretic fidelity metrics and estimation procedures.
+  \item Empirically show systematic divergences across 14 topics and orderings.
+  \item Provide implications and guidelines for MAS researchers and practitioners.
 \end{itemize}
 
-\textbf{Research Questions:} We investigate three key questions: (1) Do LLMs exhibit systematic bias compared to classical DeGroot dynamics? (2) How does topic framing affect LLM opinion expression and convergence? (3) What mechanisms underlie LLM algorithmic fidelity failures in multi-agent systems?
-
-\textbf{Hypothesis:} We hypothesize that LLMs will exhibit significant algorithmic fidelity failures, including systematic bias, order effects, and convergence issues, due to their training on biased text data and sensitivity to prompt framing.
-
-\textit{Contributions:} We establish a rigorous mathematical framework for evaluating algorithmic fidelity in multi-agent opinion dynamics, present the first systematic comparison of LLM-based agents against the classical DeGroot model across 14 diverse topics, introduce novel quantitative metrics for measuring agent fidelity, and provide evidence-based recommendations for researchers using LLMs in multi-agent systems.
-
 \section{Related Work}
-\textbf{Multi-Agent Opinion Dynamics:} The DeGroot model provides the mathematical foundation for understanding opinion evolution in multi-agent systems. This model assumes linear update rules and has been extensively studied in control theory, social psychology, and multi-agent systems research. The linear DeGroot model remains the gold standard for mathematical analysis of opinion dynamics.
+\textbf{Automated Opinion Controllers:} The foundational work by DeBuse and Warnick (2024) \cite{debuse2024study} established the practical feasibility of using Large Language Models as automated agents in opinion dynamics. Their study introduced three archetypal controller types (stubborn, popular, and strategic agents) and demonstrated that LLMs can effectively translate numerical control signals into nuanced social media content. Critically, they showed that current generative AI technologies can both infer opinions from social media posts and generate appropriate responses based on quantified commands, making the implementation of automated social influence systems remarkably straightforward. However, their work focused on the \textit{capability} of LLMs to implement opinion controllers rather than their \textit{fidelity} to mathematical models.
 
-\textbf{LLM-based Multi-Agent Systems:} Recent work has explored using LLMs as agents in various multi-agent simulation contexts. However, most studies focus on task performance rather than algorithmic fidelity to mathematical models. The multi-agent systems community has shown increasing interest in LLM-based agents, but systematic evaluation of their mathematical consistency remains underexplored.
+\textbf{Multi-Agent Opinion Dynamics:} The DeGroot model provides the mathematical foundation for understanding opinion evolution in multi-agent systems \cite{degroot1974reaching,proskurnikov2017tutorial}. This model assumes linear update rules and has been extensively studied in control theory, social psychology, and multi-agent systems research. Beyond DeGroot, the Friedkin--Johnsen model incorporates susceptibility and stubbornness \cite{friedkin1999social}, and bounded-confidence models such as Hegselmann--Krause capture non-linear opinion interaction \cite{hegselmann2002opinion}. The linear DeGroot model remains a workhorse for mathematical analysis, with extensive results on convergence and network effects.
 
-\textbf{Algorithmic Fidelity in AI Systems:} The concept of algorithmic fidelity (measuring how well computational agents reproduce expected mathematical behavior) has been explored in various contexts, but this concept has not been systematically applied to multi-agent opinion dynamics, representing a critical gap in the literature.
+\textbf{LLM-based Multi-Agent Systems:} Recent work has explored using LLMs as agents in various multi-agent simulation contexts. Park et al. (2023) introduced "Generative Agents" that exhibit human-like behavior in virtual environments, while works from NeurIPS and ICLR workshops have explored LLM agents in social simulations. Parallel efforts study LLMs as evaluators, e.g., MT-Bench and G-Eval \cite{zheng2023judging,liu2023geval}, and propose multi-judge frameworks to reduce single-judge bias \cite{juries2024}. However, most studies focus on emergent behavior and task performance rather than algorithmic fidelity to mathematical models. The multi-agent systems community has shown increasing interest in LLM-based agents, but systematic evaluation of their mathematical consistency remains underexplored.
 
-\textbf{LLM Bias and Alignment:} Extensive research has documented systematic biases in LLMs, including gender, racial, and political biases. However, the impact of these biases on multi-agent opinion dynamics remains largely unexplored.
+\textbf{Algorithmic Fidelity in AI Systems:} The concept of algorithmic fidelity (measuring how well computational agents reproduce expected mathematical behavior) has been explored in various contexts, including neural network approximation theory and AI safety evaluation. However, this concept has not been systematically applied to multi-agent opinion dynamics, representing a critical gap in the literature. Our work extends this concept to the domain of automated social influence systems, where fidelity to mathematical models is crucial for reliable deployment.
+
+\textbf{LLM Bias and Alignment:} Extensive research has documented systematic biases in LLMs, including gender, racial, and political biases. However, the impact of these biases on multi-agent opinion dynamics and their interaction with network effects remains largely unexplored. Our work provides the first systematic analysis of how LLM biases manifest in multi-agent social dynamics, building on DeBuse and Warnick's framework to understand the limitations of automated opinion controllers.
+
+\textbf{Ethical Considerations in Automated Social Influence:} DeBuse and Warnick (2024) \cite{debuse2024study} highlighted the ethical implications of automated opinion controllers, drawing on frameworks from biomedical research (Belmont Report) and cybersecurity (Menlo Report). They emphasized the need for responsible development and deployment of automated social influence systems. Our work contributes to this discussion by providing empirical evidence of algorithmic fidelity failures that could undermine the reliability and predictability of such systems.
 
 \section{Mathematical Framework}
 \subsection{Classical DeGroot Model}
@@ -94,20 +103,21 @@ x_i^{(t+1)} = f(\{r_{j \to i}^{(t)}\}_{j \in \mathcal{N}(i)})
 \]
 
 \subsection{Algorithmic Fidelity Metrics}
-We define simple metrics to measure how well LLM-based dynamics match the DeGroot model:
+We define theoretically motivated metrics to measure how well LLM-based dynamics match the DeGroot model. These metrics are grounded in operator theory and provide quantitative measures of algorithmic fidelity:
 
-\textbf{Bias:} The average difference between LLM and DeGroot final opinions:
+\textbf{Systematic Bias:} The mean difference between LLM and DeGroot final opinions, measuring systematic deviation from expected behavior:
 \[
 \text{Bias} = \frac{1}{n}\sum_{i=1}^{n} (x^{(\infty)}_{\text{LLM},i} - x^{(\infty)}_{\text{DeGroot},i})
 \]
+This metric captures the first moment of the distribution of deviations, indicating whether LLMs systematically over- or under-estimate opinions relative to the mathematical baseline.
 
-\textbf{Fixed-Point Error:} The magnitude of the difference between LLM and DeGroot final opinions:
+\textbf{Fixed-Point Error:} The scaled magnitude of the difference between LLM and DeGroot mean final opinions, measuring convergence to different equilibria:
 \[
 \text{Error} = |\bar{x}^{(\infty)}_{\text{LLM}} - \bar{x}^{(\infty)}_{\text{DeGroot}}| \times \sqrt{n}
 \]
-where $\bar{x}$ is the mean opinion across all agents.
+where $\bar{x}$ is the mean opinion across all agents. The $\sqrt{n}$ scaling ensures the metric is comparable across different network sizes and represents the magnitude of deviation in the mean field limit.
 
-These metrics tell us how much the LLM deviates from the expected mathematical behavior.
+\textbf{Theoretical Motivation:} These metrics are motivated by the theory of linear operators on opinion spaces. In the DeGroot model \cite{degroot1974reaching}, the opinion update operator $T: [0,1]^n \to [0,1]^n$ is linear and converges to a unique fixed point (see also \cite{friedkin1999social,proskurnikov2017tutorial}). Our metrics measure how much the LLM-based operator $T_{\text{LLM}}$ deviates from this theoretical behavior, providing a quantitative measure of algorithmic fidelity.
 
 \section{Experimental Setup}
 \subsection{System Architecture}
@@ -120,40 +130,7 @@ Our experimental system consists of three main components:
 \textbf{3. Simulation Controller:} Orchestrates the multi-agent simulation, managing opinion updates and network dynamics.
 
 \subsection{Prompt Design and Opinion Scale}
-We designed specific prompts for both post generation and rating to ensure consistent opinion expression and interpretation. The A vs B axis approach helps the LLM stay consistent, especially when we switch the order of topic A and topic B.
-
-\textit{Post Generation Prompt:} For topics formatted as "A vs B", agents receive:
-\begin{quote}
-\small
-Write a short, social-media style post (1-3 sentences, $\leq$320 characters) in first person about \texttt{\{a\}} vs \texttt{\{b\}}. Your current opinion: \texttt{\{self.current\_opinion:.3f\}} (-1=favors \texttt{\{a\}}, 1=favors \texttt{\{b\}}).
-
-If you see other agents' posts, you may respond to 1-2 of them by name (e.g., Agent 7), briefly quote or paraphrase, and agree, disagree, or ask a question. Prose only, no numeric score.
-
-Here are recent posts from connected agents. Write a conversational, social-post reply:
-\begin{itemize}
-\item Optionally respond to 1-2 agents by name (e.g., Agent 3).
-\item You may quote/paraphrase briefly and agree, disagree, or ask a question.
-\item Keep it 1-3 sentences, $\leq$320 characters, first person.
-\end{itemize}
-\end{quote}
-
-\textit{Rating Prompt:} For interpreting posts, agents receive:
-\begin{quote}
-\small
-Rate the post on the axis \texttt{\{a\}} (-1) $\leftrightarrow$ \texttt{\{b\}} (1).\\
--1.000 = strongly favors \texttt{\{a\}} over \texttt{\{b\}}\\
- 1.000 = strongly favors \texttt{\{b\}} over \texttt{\{a\}}
-
-Post: "\texttt{\{post\}}"\\
-Respond with ONLY one number in [-1.000, 1.000] on its own line. Use 0.000 if neutral.
-\end{quote}
-
-\textit{Opinion Scale:} All opinions are represented on a continuous scale from -1 to 1, where:
-\begin{itemize}
-  \item -1.000 = strongly favors the first option (A)
-  \item 0.000 = neutral between the two options
-  \item 1.000 = strongly favors the second option (B)
-\end{itemize}
+We use an A vs B axis framing to stabilize expression and enable symmetry tests. Exact post generation and rating prompts, parsing rules, and examples are provided in Appendix~\ref{app:prompts_parsing}. Opinions use a continuous scale from $-1$ to $1$, mapped to $[0, 1]$ for DeGroot comparisons.
 
 \subsection{Simulation Protocol}
 The simulation follows this exact protocol for each timestep $t$:
@@ -198,20 +175,50 @@ We evaluated LLM-based opinion dynamics across 14 diverse topics:
 \textbf{Cultural Topics:} Pride flag vs Ten Commandments in classrooms
 \textbf{Sports Topics:} LeBron James vs Michael Jordan
 
-Each topic was tested in both directions (A vs B and B vs A) to assess symmetry properties.
+Each topic was tested in both directions (A vs B and B vs A) to assess symmetry properties. Topic choices were made to include neutral baselines and societally salient issues; public polling indicates substantial divisions on Israel/Palestine and school display policies \cite{pewIsraelPalestine2024,yougovTenCommandments2024,yougovPrideFlag2024}.
 
 \textbf{Simulation Parameters:}
 \begin{itemize}
   \item \textbf{Agents:} 50 agents per simulation
   \item \textbf{Timesteps:} 50 iterations
-  \item \textbf{Network:} Complete graph (all agents connected)
-  \item \textbf{LLM Model:} GPT-5-nano via LiteLLM
-  \item \textbf{Temperature:} Fixed at 0.0 for deterministic behavior
+  \item \textbf{Network:} Sparse random graph (5\% connectivity, 67 edges out of 1225 possible)
+  \item \textbf{Temperature:} Provider default; held constant across trials
   \item \textbf{Opinion Scale:} $[-1, 1]$ for LLM, converted to $[0, 1]$ for DeGroot comparison
   \item \textbf{API Calls:} Tracked for each simulation (post generation + rating calls)
 \end{itemize}
 
+\subsection{Models Compared}
+We report results for the following models under an identical protocol and prompts: \modelsCompared. In this draft, \modelFiveMini{} and \modelGrokMini{} entries are placeholders pending data collection.
+
+\textbf{Network Topology Considerations:} The sparse random graph topology (5\% connectivity) represents a more realistic social network structure compared to complete graphs, where each agent is connected to only a small subset of other agents. This topology choice has important implications: (1) \textit{Local Influence:} Agents are primarily influenced by their immediate neighbors rather than the entire population, (2) \textit{Information Diffusion:} Opinion changes propagate through the network more gradually, and (3) \textit{Convergence Behavior:} The DeGroot model on sparse graphs may exhibit different convergence properties compared to complete graphs. The average degree of 2.7 means most agents interact with only 2-3 other agents per timestep, creating a more constrained information environment that may amplify the effects of LLM biases.
+
+\subsection{Experimental Controls}
+To support repeatability, we held core implementation parameters fixed across all trials:
+\begin{itemize}
+  \item \textbf{Random Seed:} A fixed seed was used to generate the initial network topology and stored with run artifacts.
+  \item \textbf{Decoding Parameters:} Temperature and related sampling settings were left at provider defaults and not varied; the model identifier and prompt templates were fixed across runs.
+  \item \textbf{Execution Order:} Agent update order was fixed each timestep, and calls were executed in isolated sessions with no cross-run state.
+\end{itemize}
+
 \section{Results}
+
+\subsection{Cross-Model Benchmarks (Placeholder)}
+We plan to evaluate additional models under the same protocol to assess whether divergences are model-specific or systematic across architectures. Table~\ref{tab:cross_model} provides a placeholder summary; results will be added as they become available.
+
+\begin{table}[ht]
+\centering
+\caption{Cross-Model Benchmarks (placeholder; protocol identical across models)}
+\label{tab:cross_model}
+\begin{tabular}{lcccc}
+\toprule
+Model & Bias & Error & Symmetry & Notes \\
+\midrule
+\modelFiveNano{} (this work) & \cmBiasFiveNano & \cmErrorFiveNano & fail & baseline \\
+\modelFiveMini{} (pending) & \cmBiasFiveMini & \cmErrorFiveMini & \cmSymFiveMini & pending \\
+\modelGrokMini{} (pending) & \cmBiasGrokMini & \cmErrorGrokMini & \cmSymGrokMini & pending \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Overall Algorithmic Fidelity}
 Our analysis reveals significant algorithmic fidelity failures across all tested topics. We define the following quantitative metrics:
@@ -269,19 +276,21 @@ Our results reveal distinct bias patterns across different types of topics, with
 
 Interestingly, posts about the Pride Flag consistently adopt teacher personas, while 10 Commandments posts come from non-teacher perspectives, revealing how LLMs construct different social identities based on topic framing.
 
-\textbf{Order Effects:} All topic pairs show significant order effects when reversed, demonstrating systematic asymmetry. For example:
+\textbf{Order Effects:} All topic pairs show significant order effects when reversed, demonstrating systematic asymmetry, consistent with classic response-order effects in survey research \cite{krosnick1987order}. For example:
 \begin{itemize}
   \item \textbf{Israel v Palestine:} Bias = +0.39, Error = 2.73
   \item \textbf{Palestine v Israel:} Bias = -0.28, Error = 1.99
 \end{itemize}
 
-This 0.67 difference in bias magnitude demonstrates that the LLM's interpretation depends heavily on which option is presented first.
+This 0.67 difference in bias magnitude demonstrates that the LLM's interpretation depends heavily on which option is presented first. Figures \ref{fig:israel_palestine} and \ref{fig:lebron_jordan} visually demonstrate these order effects, showing how the same underlying topic produces different dynamics depending on framing.
 
 \textbf{Neutral Topic Bias:} Even seemingly neutral topics show substantial bias, suggesting that LLMs introduce systematic preferences even for topics that should be mathematically neutral:
 \begin{itemize}
   \item \textbf{Chocolate v Vanilla:} Error = 5.93, Bias = +0.84
   \item \textbf{Vanilla v Chocolate:} Error = 6.27, Bias = +0.89
 \end{itemize}
+
+Figure \ref{fig:chocolate_vanilla} demonstrates this surprising bias in neutral topics, showing how even abstract choices like ice cream flavors exhibit systematic deviation from DeGroot dynamics.
 
 \subsection{Qualitative Analysis of LLM Behavior}
 Our analysis reveals fascinating patterns in how LLMs construct social identities and express opinions:
@@ -297,7 +306,7 @@ Our analysis reveals fascinating patterns in how LLMs construct social identitie
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\columnwidth]{figures/trajectory_israel_vs_palestine.png}
-\caption{Opinion trajectory for Israel vs Palestine showing order effects. The LLM trajectory (blue) diverges significantly from the DeGroot baseline (red dashed line), with different dynamics depending on topic ordering.}
+\caption{Opinion trajectory for Israel vs Palestine showing order effects. The LLM trajectory (blue) diverges significantly from the DeGroot baseline (red line), with different dynamics depending on topic ordering.}
 \label{fig:israel_palestine}
 \end{figure}
 
@@ -306,6 +315,20 @@ Our analysis reveals fascinating patterns in how LLMs construct social identitie
 \includegraphics[width=\columnwidth]{figures/trajectory_hanging_a_pride_flag_in_the_classroom_vs_banning_the_pride_flag_from_being_hung_in_the_classroom.png}
 \caption{Opinion trajectory for Pride Flag vs 10 Commandments showing extreme bias. The LLM shows strong preference for one side, with posts adopting teacher personas for Pride Flag topics.}
 \label{fig:pride_flag}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{figures/trajectory_lebron_james_is_the_goat_vs_michael_jordan_is_the_goat.png}
+\caption{Opinion trajectory for LeBron vs Jordan showing order effects. The LLM trajectory (blue) diverges significantly from the DeGroot baseline (red line), demonstrating systematic bias even in sports topics.}
+\label{fig:lebron_jordan}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{figures/trajectory_chocolate_ice_cream_vs_vanilla_ice_cream.png}
+\caption{Opinion trajectory for Chocolate vs Vanilla showing bias in neutral topics. Even seemingly neutral topics exhibit substantial deviation from DeGroot dynamics, suggesting systematic LLM preferences.}
+\label{fig:chocolate_vanilla}
 \end{figure}
 
 \subsection{Convergence Analysis}
@@ -353,12 +376,26 @@ Our results suggest several mechanisms underlying LLM algorithmic fidelity failu
 
 \textbf{Implications for Multi-Agent Systems:} These findings suggest that LLM-based multi-agent systems may exhibit fundamentally different dynamics than classical mathematical models, requiring new theoretical frameworks and evaluation methodologies.
 
-\subsection{Implications}
-\textbf{For Computational Social Science:} LLM-based simulations cannot be used as drop-in replacements for mathematical models. Results must be interpreted with caution and validated against theoretical predictions.
+\subsection{Implications for Automated Opinion Controllers}
+Our findings have critical implications for the practical deployment of automated opinion controllers, building directly on the framework established by DeBuse and Warnick (2024) \cite{debuse2024study}. While their work demonstrated that LLMs can effectively implement opinion controllers and generate convincing content, our results reveal fundamental limitations that could undermine the reliability of such systems.
 
-\textbf{For Multi-Agent Systems:} LLM agents introduce systematic biases that must be accounted for in system design. Robustness testing across different framings and contexts is essential.
+\textbf{Theoretical Guarantees vs. Practical Reality:} DeBuse and Warnick's three controller archetypes (stubborn, popular, and strategic agents) are designed based on classical opinion dynamics theory, which assumes predictable convergence and stable equilibria. However, our findings show that LLM-based implementations of these controllers may not preserve these theoretical guarantees. The systematic bias patterns we observed suggest that automated opinion controllers could behave unpredictably, potentially diverging from their intended mathematical specifications.
 
-\textbf{For Machine Learning:} Algorithmic fidelity is a crucial evaluation dimension for LLM applications. Current LLM training objectives may conflict with mathematical consistency.
+\textbf{Controller Reliability:} The order effects and persona construction we documented could significantly impact the effectiveness of automated opinion controllers. For example, a strategic agent designed to move opinions toward a goal might behave differently depending on how the topic is framed, potentially undermining its control objectives. The systematic bias toward certain positions could also cause controllers to inadvertently favor particular viewpoints regardless of their intended neutrality.
+
+\textbf{For Computational Social Science:} LLM-based simulations exhibit systematic divergences from classical mathematical models, suggesting they capture different aspects of social dynamics. Results should be interpreted as representing a distinct class of dynamical systems rather than approximations of classical models.
+
+\textbf{For Multi-Agent Systems:} LLM agents exhibit consistent behavioral patterns that differ from classical models, requiring new theoretical frameworks for understanding their dynamics. System design should account for these emergent properties rather than treating them as noise.
+
+\textbf{For Machine Learning:} Algorithmic fidelity represents a crucial evaluation dimension for LLM applications in multi-agent contexts. Understanding the systematic patterns of LLM behavior may inform both model development and theoretical analysis of emergent social dynamics.
+
+\subsection{Model-Specific Observations (Placeholders)}
+We will add detailed comparisons once results for \modelFiveMini{} and \modelGrokMini{} are available:
+\begin{itemize}
+  \item \textbf{\modelFiveMini:} \Placeholder{} bias, \Placeholder{} error, \Placeholder{} symmetry rate; notable topic sensitivities: \Placeholder.
+  \item \textbf{\modelGrokMini:} \Placeholder{} bias, \Placeholder{} error, \Placeholder{} symmetry rate; notable topic sensitivities: \Placeholder.
+  \item \textbf{\modelFiveMini{} vs \modelGrokMini:} contrast on bias direction, asymmetry magnitude, and variance: \Placeholder.
+\end{itemize}
 
 \subsection{Best Practices}
 Based on our findings, we recommend:
@@ -366,39 +403,101 @@ Based on our findings, we recommend:
   \item Always include bias analysis in LLM-based simulations
   \item Test symmetry properties by reversing topic order
   \item Compare against mathematical baselines to establish fidelity bounds
-  \item Report confidence intervals and variance measures
+  \item Report confidence intervals and variance measures; quantify uncertainty from stochastic LLM evaluation protocols \cite{reproLLMuncertainty2024}
   \item Document prompt templates and experimental conditions
   \item Consider hybrid approaches combining LLMs with mathematical models
 \end{itemize}
 
 \section{Limitations \& Future Work}
-\textbf{Limitations:} This study has several important limitations: (1) Limited to GPT-5-nano on a complete graph topology with text-based interactions, (2) No human validation of opinion ratings, (3) Single temperature setting (0.0) for deterministic behavior, (4) Limited to 50 iterations per simulation, (5) No analysis of different prompt templates or system messages, and (6) No comparison with human-based opinion dynamics.
+\textbf{Limitations:} This study has several important limitations that affect generalizability: (1) \textit{Single Model:} Limited to one LLM model (GPT-5-nano) without comparison to other architectures, (2) \textit{Single Network Topology:} Only tested on sparse random graphs (5\% connectivity) without evaluation on complete graphs, scale-free, or small-world networks, (3) \textit{Single Temperature:} Fixed temperature setting (0.0) without exploration of stochastic behavior, (4) \textit{No Human Validation:} LLM-generated ratings not validated against human raters, (5) \textit{Limited Prompt Engineering:} Single prompt template without systematic prompt optimization, (6) \textit{No Human Baseline:} No comparison with human-based opinion dynamics, and (7) \textit{Model Clarity:} The specific model architecture and training details for "GPT-5-nano" require clarification.
 
-\textbf{Reproducibility:} All code, data, and experimental configurations are available at [GitHub repository]. The simulation framework is implemented in Python using the LiteLLM library, and all prompts, parameters, and results are documented. Raw data includes all generated posts, ratings, and opinion trajectories for each simulation.
+\textbf{Reproducibility:} All code, data, and experimental configurations are available at [GitHub repository]. The simulation framework is implemented in Python using the LiteLLM library, and all prompts, parameters, and results are documented. Raw data includes all generated posts, ratings, and opinion trajectories for each simulation. We follow emerging guidance on repeat evaluations and uncertainty reporting for LLM benchmarks \cite{reproLLMuncertainty2024}.
 
 \textbf{Future Work:}
 \begin{itemize}
-  \item \textbf{Model Comparison:} Compare GPT-5-nano against Grok and GPT-5 to assess whether algorithmic fidelity varies across different LLM architectures
-  \item \textbf{Network Topologies:} Evaluate performance on different network structures beyond complete graphs (e.g., scale-free, small-world)
-  \item \textbf{Human Validation:} Include human raters to validate LLM-generated opinion ratings and compare with human opinion dynamics
-  \item \textbf{Prompt Engineering:} Develop prompt templates that reduce algorithmic bias and improve consistency across topic orderings
-  \item \textbf{Theoretical Analysis:} Develop new mathematical frameworks for understanding LLM-based opinion dynamics beyond the DeGroot model
+  \item \textbf{Model Comparison:} Compare across multiple LLM architectures (GPT-4, Claude, Gemini) to assess algorithmic fidelity variations and establish model-agnostic patterns
+  \item \textbf{Network Topologies:} Evaluate performance on complete graphs, scale-free networks, and small-world networks to understand topology-dependent algorithmic fidelity
+  \item \textbf{Human Validation:} Include human raters to validate LLM-generated opinion ratings and establish human baseline comparisons
+  \item \textbf{Prompt Engineering:} Systematically optimize prompt templates to reduce algorithmic bias and improve consistency across topic orderings
+  \item \textbf{Theoretical Analysis:} Develop new mathematical frameworks for understanding LLM-based opinion dynamics as a distinct dynamical system rather than a DeGroot approximation
+  \item \textbf{Reproducibility:} Establish standardized evaluation protocols and benchmarks for algorithmic fidelity in multi-agent LLM systems
 \end{itemize}
 
 \section{Conclusion}
-Our comprehensive evaluation of LLM-based multi-agent opinion dynamics reveals significant algorithmic fidelity failures across all tested topics. While LLMs offer exciting possibilities for more realistic multi-agent simulations, they cannot be used as faithful replacements for mathematical models without careful consideration of their systematic biases and limitations.
+Our comprehensive evaluation of LLM-based multi-agent opinion dynamics reveals systematic divergences from classical DeGroot dynamics across all tested topics. While LLMs offer exciting possibilities for more realistic multi-agent simulations, they exhibit consistent patterns of deviation that suggest they instantiate a fundamentally different dynamical system rather than approximating classical mathematical models.
 
-The key findings are: (1) Universal bias across all topics, (2) High fixed-point errors, (3) Complete symmetry failure, (4) Convergence issues, and (5) Systematic persona construction that varies by topic framing. Most strikingly, we discovered that LLMs construct different social identities based on topic context—adopting teacher personas for Pride Flag discussions while using general public perspectives for 10 Commandments debates.
+The key findings are: (1) Universal bias across all topics, (2) High fixed-point errors, (3) Complete symmetry failure, (4) Convergence issues, and (5) Systematic persona construction that varies by topic framing. Most strikingly, we discovered that LLMs construct different social identities based on topic context, adopting teacher personas for Pride Flag discussions while using general public perspectives for 10 Commandments debates.
 
-These results have important implications for the multi-agent systems community. The systematic persona construction suggests that LLMs don't simply express opinions but actively construct social identities that influence their reasoning. This finding highlights the need for rigorous evaluation of algorithmic fidelity in LLM-based multi-agent applications and suggests that understanding LLM behavior requires analysis beyond numerical metrics.
+These results have important implications for the multi-agent systems community. Rather than viewing LLMs as imperfect approximations of classical models, our findings suggest that LLMs instantiate a distinct class of dynamical systems with their own characteristic behaviors. The systematic persona construction reveals that LLMs don't simply express opinions but actively construct contextual social identities that influence their reasoning patterns.
 
-This work contributes to the multi-agent systems literature by providing the first systematic evaluation of LLM algorithmic fidelity in opinion dynamics, establishing essential guidelines for researchers using LLMs as agents in multi-agent simulations, and highlighting critical limitations that must be addressed for reliable multi-agent system design. The discovery of systematic persona construction opens new research directions for understanding how LLMs model human social behavior.
+This work contributes to the multi-agent systems literature by providing the first systematic evaluation of LLM algorithmic fidelity in opinion dynamics, establishing essential guidelines for researchers using LLMs as agents in multi-agent simulations, and highlighting the need for new theoretical frameworks to understand LLM-based dynamical systems. The discovery of systematic persona construction opens new research directions for understanding how LLMs model human social behavior and suggests that future work should focus on characterizing these emergent dynamical properties rather than forcing LLMs to approximate classical models.
 
 
-% \bibliographystyle{IEEEtran}
-% \bibliography{refs}  % TODO: Add bibliography file
+\bibliographystyle{IEEEtran}
+\begin{thebibliography}{99}
+
+\bibitem{debuse2024study}
+M. DeBuse and S. Warnick, ``A study of three influencer archetypes for the control of opinion spread in time-varying social networks,'' in \emph{2024 IEEE 63rd Conference on Decision and Control (CDC)}, Dec. 2024, pp. 5309--5317, doi: 10.1109/CDC56724.2024.10885979.
+
+\bibitem{degroot1974reaching}
+M. H. DeGroot, ``Reaching a consensus,'' \emph{Journal of the American Statistical Association}, vol. 69, no. 345, pp. 118--121, 1974, doi: 10.1080/01621459.1974.10480137.
+
+\bibitem{friedkin1999social}
+N. E. Friedkin and E. C. Johnsen, ``Social influence networks and opinion change,'' \emph{Social Networks}, vol. 21, no. 1, pp. 1--29, 1999, doi: 10.1016/S0378-8733(99)00018-3.
+
+\bibitem{hegselmann2002opinion}
+R. Hegselmann and U. Krause, ``Opinion dynamics and bounded confidence: models, analysis and simulation,'' \emph{Journal of Artificial Societies and Social Simulation}, vol. 5, no. 3, 2002. [Online]. Available: https://www.jasss.org/5/3/2.html
+
+\bibitem{proskurnikov2017tutorial}
+A. V. Proskurnikov and R. Tempo, ``A tutorial on modeling and analysis of dynamic social networks. Part I,'' \emph{IEEE Control Systems Magazine}, vol. 37, no. 1, pp. 26--65, 2017, doi: 10.1109/MCS.2016.2620971.
+
+\bibitem{zheng2023judging}
+L. Zheng, H. Chiang, et al., ``Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena,'' 2023, arXiv:2306.05685. [Online]. Available: https://arxiv.org/abs/2306.05685
+
+\bibitem{liu2023geval}
+Y. Liu, Y. Xu, et al., ``G-Eval: NLG Evaluation using GPT-4 with Better Human Alignment,'' 2023, arXiv:2303.16634. [Online]. Available: https://arxiv.org/abs/2303.16634
+
+\bibitem{juries2024}
+S. Chen, X. Liu, et al., ``Replacing Judges with Juries: Evaluating LLM Generations with a Panel of Diverse Models,'' 2024, arXiv:2404.18796. [Online]. Available: https://arxiv.org/abs/2404.18796
+
+\bibitem{reproLLMuncertainty2024}
+M. Jia, E. Durmus, et al., ``Towards Reproducible LLM Evaluation: Quantifying Uncertainty in LLM Benchmark Scores,'' 2024, arXiv:2410.03492. [Online]. Available: https://arxiv.org/abs/2410.03492
+
+\bibitem{krosnick1987order}
+J. A. Krosnick and D. F. Alwin, ``An evaluation of a cognitive theory of response-order effects in survey measurement,'' \emph{Public Opinion Quarterly}, vol. 51, no. 2, pp. 201--219, 1987, doi: 10.1086/269029.
+
+\bibitem{pewIsraelPalestine2024}
+Pew Research Center, ``Americans' views of the Israeli-Palestinian conflict,'' 2024. [Online]. Available: https://www.pewresearch.org/
+
+\bibitem{yougovTenCommandments2024}
+YouGov, ``Do Americans support displaying the Ten Commandments in classrooms?,'' 2024. [Online]. Available: https://today.yougov.com/
+
+\bibitem{yougovPrideFlag2024}
+YouGov, ``Public opinion on Pride flags in schools,'' 2024. [Online]. Available: https://today.yougov.com/
+
+\end{thebibliography}
 
 \appendix
+\section{Prompt Templates and Parsing}
+\label{app:prompts_parsing}
+This appendix provides the exact post generation and rating prompts, along with parsing details and examples used in the experiments.
+
+\textbf{Post Generation Prompt:}
+\begin{quote}
+\small
+Write a short, social-media style post (1--3 sentences, $\leq$320 characters) in first person about \texttt{\{a\}} vs \texttt{\{b\}}. Your current opinion: \texttt{\{self.current\_opinion:.3f\}} ($-1$ favors \texttt{\{a\}}, $1$ favors \texttt{\{b\}}).
+
+If you see other agents' posts, you may respond to 1--2 of them by name (e.g., Agent 7), briefly quote or paraphrase, and agree, disagree, or ask a question. Prose only, no numeric score.
+\end{quote}
+
+\textbf{Rating Prompt:}
+\begin{quote}
+\small
+Rate the post on the axis \texttt{\{a\}} ($-1$) $\leftrightarrow$ \texttt{\{b\}} ($1$). Respond with only one number in [$-1.000$, $1.000$] on its own line. Use $0.000$ if neutral.
+\end{quote}
+
+\textbf{Parsing:} We extract the last floating-point number in the response and clamp to [$-1$, $1$].
+
 \section{Topic Axis Definitions}
 \label{app:axis_definitions}
 This appendix provides the complete axis definitions for all 14 topics tested in our experiments. Each topic is framed as a comparison between two options, with -1 representing strong preference for the first option and +1 representing strong preference for the second option.

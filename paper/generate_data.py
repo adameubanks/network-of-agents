@@ -31,6 +31,39 @@ def load_simulation_data(results_dir: str) -> Dict:
     
     return data
 
+def load_simulation_data_by_model(results_dir: str, model_patterns: Dict[str, str]) -> Dict[str, Dict]:
+    """
+    Load simulation data grouped by normalized model id.
+
+    model_patterns maps filename substrings to normalized ids, e.g.,
+    {"gpt-5-nano": "five_nano", "gpt-5-mini": "five_mini", "grok-mini": "grok_mini"}.
+    """
+    data_by_model: Dict[str, Dict] = {norm: {} for norm in model_patterns.values()}
+    degroot_dir = Path(results_dir) / "degroot"
+    if not degroot_dir.exists():
+        return data_by_model
+    for topic_dir in degroot_dir.iterdir():
+        if not topic_dir.is_dir() or topic_dir.name == "test_topic":
+            continue
+        for subtopic_dir in topic_dir.iterdir():
+            if not subtopic_dir.is_dir():
+                continue
+            for json_file in subtopic_dir.glob("*.json"):
+                name = json_file.name.lower()
+                matched = None
+                for pattern, norm in model_patterns.items():
+                    if pattern in name:
+                        matched = norm
+                        break
+                if matched is None:
+                    continue
+                stem = json_file.stem
+                parts = stem.split("_50_50_")
+                topic_key = parts[0] if len(parts) > 1 else stem
+                with open(json_file, 'r') as f:
+                    data_by_model[matched][topic_key] = json.load(f)
+    return data_by_model
+
 def extract_trajectory_data(sim_data: Dict) -> Dict:
     """Extract trajectory data for plotting."""
     trajectories = {}
@@ -156,7 +189,7 @@ def create_trajectory_plots(metrics: Dict, output_dir: str):
             # Plot LLM trajectory with error bars
             ax.errorbar(timesteps, data['mean_trajectory'], 
                        yerr=data['std_trajectory'], 
-                       label='LLM (GPT-5-nano)', 
+                       label='LLM (gpt-5-nano)', 
                        alpha=0.7, 
                        capsize=3)
             
@@ -202,26 +235,118 @@ def generate_latex_data(metrics: Dict, output_file: str):
         
         # Create table data
         f.write("\\newcommand{\\resultstable}{\n")
-        f.write("\\begin{tabular}{lcccc}\n")
+        f.write("\\footnotesize\n")
+        f.write("\\begin{tabular}{p{2.0cm}cccc}\n")
         f.write("\\toprule\n")
-        f.write("Topic & Bias & Fixed-Point Error & LLM Mean & DeGroot Mean \\\\\n")
+        f.write("Topic & Bias & Error & LLM Mean & DeGroot \\\\\n")
         f.write("\\midrule\n")
         
         for topic, data in metrics.items():
             topic_display = topic.replace("_", " ").title()
-            f.write(f"{topic_display} & {data['bias']:.4f} & {data['l2_error']:.4f} & {data['final_mean']:.4f} & {data['degroot_final']:.4f} \\\\\n")
+            f.write(f"{topic_display} & {data['bias']:.2f} & {data['l2_error']:.2f} & {data['final_mean']:.2f} & {data['degroot_final']:.2f} \\\\\n")
         
         f.write("\\bottomrule\n")
         f.write("\\end{tabular}\n")
         f.write("}\n\n")
         
-        # Individual topic data
+        # Individual topic data (use csname to allow digits in names)
         for topic, data in metrics.items():
             topic_var = topic.replace("_", "").replace(" ", "")
-            f.write(f"\\newcommand{{\\{topic_var}Bias}}{{{data['bias']:.4f}}}\n")
-            f.write(f"\\newcommand{{\\{topic_var}Error}}{{{data['l2_error']:.4f}}}\n")
-            f.write(f"\\newcommand{{\\{topic_var}LLMMean}}{{{data['final_mean']:.4f}}}\n")
-            f.write(f"\\newcommand{{\\{topic_var}LLMStd}}{{{data['final_std']:.4f}}}\n")
+            f.write(
+                f"\\expandafter\\newcommand\\csname {topic_var}Bias\\endcsname"
+                f"{{{data['bias']:.4f}}}\n"
+            )
+            f.write(
+                f"\\expandafter\\newcommand\\csname {topic_var}Error\\endcsname"
+                f"{{{data['l2_error']:.4f}}}\n"
+            )
+            f.write(
+                f"\\expandafter\\newcommand\\csname {topic_var}LLMMean\\endcsname"
+                f"{{{data['final_mean']:.4f}}}\n"
+            )
+            f.write(
+                f"\\expandafter\\newcommand\\csname {topic_var}LLMStd\\endcsname"
+                f"{{{data['final_std']:.4f}}}\n"
+            )
+
+def generate_cross_model_latex(metrics_by_model: Dict[str, Dict], output_file: str, topics_order: List[str]):
+    """Generate LaTeX macros for cross-model tables."""
+    def avg(metric_key: str, model_id: str) -> str:
+        m = metrics_by_model.get(model_id, {})
+        if not m:
+            return "--"
+        vals = [v[metric_key] for v in m.values() if metric_key in v]
+        return (f"{np.mean(vals):.2f}" if vals else "--")
+
+    # Human-readable short labels to prevent overfull lines
+    pretty_labels = {
+        'banning_the_10_commandments_from_being_hung_in_the_classroom_vs_hanging_the_10_commandments_in_the_classroom': 'Ban 10 Commandments vs Hang 10 Commandments',
+        'hanging_the_10_commandments_in_the_classroom_vs_banning_the_10_commandments_from_being_hung_in_the_classroom': 'Hang 10 Commandments vs Ban 10 Commandments',
+        'banning_the_pride_flag_from_being_hung_in_the_classroom_vs_hanging_a_pride_flag_in_the_classroom': 'Ban Pride Flag vs Hang Pride Flag',
+        'hanging_a_pride_flag_in_the_classroom_vs_banning_the_pride_flag_from_being_hung_in_the_classroom': 'Hang Pride Flag vs Ban Pride Flag',
+        'chocolate_ice_cream_vs_vanilla_ice_cream': 'Chocolate vs Vanilla',
+        'vanilla_ice_cream_vs_chocolate_ice_cream': 'Vanilla vs Chocolate',
+        'conservatives_vs_liberals': 'Conservatives vs Liberals',
+        'liberals_vs_conservatives': 'Liberals vs Conservatives',
+        'israel_vs_palestine': 'Israel vs Palestine',
+        'palestine_vs_israel': 'Palestine vs Israel',
+        'lebron_james_is_the_goat_vs_michael_jordan_is_the_goat': 'LeBron vs Jordan',
+        'michael_jordan_is_the_goat_vs_lebron_james_is_the_goat': 'Jordan vs LeBron',
+        'triangles_vs_circles': 'Triangles vs Circles',
+        'circles_vs_triangles': 'Circles vs Triangles',
+    }
+
+    with open(output_file, 'w') as f:
+        f.write("% Generated cross-model data for algorithmic fidelity paper\n")
+        f.write("% This file is automatically generated by generate_data.py\n\n")
+
+        # Summary macros
+        f.write(f"\\newcommand{{\\cmBiasFiveNano}}{{{avg('bias', 'five_nano')}}}\n")
+        f.write(f"\\newcommand{{\\cmErrorFiveNano}}{{{avg('l2_error', 'five_nano')}}}\n")
+        f.write(f"\\newcommand{{\\cmSymFiveNano}}{{--}}\n")
+
+        f.write(f"\\newcommand{{\\cmBiasFiveMini}}{{{avg('bias', 'five_mini')}}}\n")
+        f.write(f"\\newcommand{{\\cmErrorFiveMini}}{{{avg('l2_error', 'five_mini')}}}\n")
+        f.write(f"\\newcommand{{\\cmSymFiveMini}}{{--}}\n")
+
+        f.write(f"\\newcommand{{\\cmBiasGrokMini}}{{{avg('bias', 'grok_mini')}}}\n")
+        f.write(f"\\newcommand{{\\cmErrorGrokMini}}{{{avg('l2_error', 'grok_mini')}}}\n")
+        f.write(f"\\newcommand{{\\cmSymGrokMini}}{{--}}\n\n")
+
+        # Cross-model table macro
+        f.write("\\newcommand{\\crossmodeltable}{\n")
+        f.write("\\begin{tabular}{lcccc}\n")
+        f.write("\\toprule\n")
+        f.write("Model & Bias & Error & Symmetry & Notes \\\\n")
+        f.write("\\midrule\n")
+        f.write("\\modelFiveNano{} (this work) & \\cmBiasFiveNano & \\cmErrorFiveNano & fail & baseline \\\\n")
+        f.write("\\modelFiveMini{} (pending) & \\cmBiasFiveMini & \\cmErrorFiveMini & \\cmSymFiveMini & pending \\\\n")
+        f.write("\\modelGrokMini{} (pending) & \\cmBiasGrokMini & \\cmErrorGrokMini & \\cmSymGrokMini & pending \\\\n")
+        f.write("\\bottomrule\n")
+        f.write("\\end{tabular}\n")
+        f.write("}\n\n")
+
+        # Per-topic cross-model table macro (Bias values) - self-contained table*
+        f.write("\\newcommand{\\perTopicCrossModelTable}{\n")
+        f.write("\\begin{table*}[ht]\\centering\\small\n")
+        f.write("\\begin{tabularx}{\\textwidth}{>{\\raggedright\\arraybackslash}X c c c}\n")
+        f.write("\\toprule\n")
+        f.write("Topic & \\modelFiveNano{} & \\modelFiveMini{} & \\modelGrokMini{} \\\\n")
+        f.write("\\midrule\n")
+        for topic in topics_order:
+            topic_display = pretty_labels.get(topic, topic.replace("_", " ").title())
+            def cell(model_id: str) -> str:
+                m = metrics_by_model.get(model_id, {})
+                if topic in m:
+                    return f"{m[topic]['bias']:.2f}"
+                return "--"
+            f.write(f"{topic_display} & {cell('five_nano')} & {cell('five_mini')} & {cell('grok_mini')} \\\\n")
+        f.write("\\bottomrule\n")
+        f.write("\\end{tabularx}\n")
+        f.write("\\caption{Per-topic bias by model (placeholders for \\modelFiveMini{} and \\modelGrokMini{}).}\n")
+        f.write("\\label{tab:cross_model_per_topic}\n")
+        f.write("\\end{table*}\n")
+        f.write("}\n")
 
 def extract_post_examples(sim_data: Dict) -> Dict:
     """Extract example posts to analyze persona differences."""
@@ -240,6 +365,13 @@ def extract_post_examples(sim_data: Dict) -> Dict:
                 post_examples[topic] = example_posts
     
     return post_examples
+
+def calculate_metrics_by_model(trajectories_by_model: Dict[str, Dict]) -> Dict[str, Dict]:
+    """Calculate metrics for each model and topic."""
+    metrics_by_model: Dict[str, Dict] = {}
+    for model_id, trajs in trajectories_by_model.items():
+        metrics_by_model[model_id] = calculate_metrics(trajs)
+    return metrics_by_model
 
 def main():
     """Main function to generate all data and visualizations."""
@@ -265,6 +397,15 @@ def main():
     print("Generating LaTeX data file...")
     generate_latex_data(metrics, "/home/adam/Projects/IDeA/network-of-agents/paper/data.tex")
     
+    # Cross-model generation (summary + per-topic bias table)
+    print("Generating cross-model LaTeX data...")
+    model_patterns = {"gpt-5-nano": "five_nano", "gpt-5-mini": "five_mini", "grok-mini": "grok_mini"}
+    sim_by_model = load_simulation_data_by_model(results_dir, model_patterns)
+    traj_by_model = {mid: extract_trajectory_data(d) for mid, d in sim_by_model.items()}
+    metrics_by_model = calculate_metrics_by_model(traj_by_model)
+    topics_order = sorted({t for d in sim_by_model.values() for t in d.keys()})
+    generate_cross_model_latex(metrics_by_model, "/home/adam/Projects/IDeA/network-of-agents/paper/data_models.tex", topics_order)
+    
     print("Extracting post examples...")
     post_examples = extract_post_examples(sim_data)
     
@@ -276,7 +417,7 @@ def main():
     print(f"Topics with high error (>4.0): {sum(1 for m in metrics.values() if m['error'] > 4.0)}")
     
     print(f"\nData and visualizations saved to {output_dir}")
-    print("LaTeX data file saved to data.tex")
+    print("LaTeX data files saved to data.tex and data_models.tex")
 
 if __name__ == "__main__":
     main()

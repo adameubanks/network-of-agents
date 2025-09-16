@@ -1,9 +1,9 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2022/dev/Debian) (preloaded format=pdflatex 2025.9.11)  15 SEP 2025 21:29
+This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2022/dev/Debian) (preloaded format=pdflatex 2025.9.11)  15 SEP 2025 21:25
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
-**paper.tex
-(./paper.tex
+**/home/adam/Projects/IDeA/network-of-agents/paper/paper.tex
+(/home/adam/Projects/IDeA/network-of-agents/paper/paper.tex
 LaTeX2e <2021-11-15> patch level 1
 L3 programming layer <2022-01-21>
 (/usr/share/texlive/texmf-dist/tex/latex/ieeetran/IEEEtran.cls
@@ -298,323 +298,25 @@ Package epstopdf-base Info: Redefining graphics rule for `.eps' on input line 4
 File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Liv
 e
 ))
-(./data.tex) (./data_models.tex) (./examples.tex)
-LaTeX Font Info:    Trying to load font information for OT1+pcr on input line 3
-9.
 
-(/usr/share/texlive/texmf-dist/tex/latex/psnfss/ot1pcr.fd
-File: ot1pcr.fd 2001/06/04 font definitions for OT1/pcr.
-)
-Underfull \hbox (badness 2073) in paragraph at lines 50--51
-[]\OT1/ptm/b/n/10 Research Ques-tions: \OT1/ptm/m/n/10 (1) Do LLM agents re-pro
--duce
- []
+! LaTeX Error: File `data.tex' not found.
 
-LaTeX Font Info:    Trying to load font information for U+msa on input line 54.
+Type X to quit or <RETURN> to proceed,
+or enter new name. (Default extension: tex)
 
-(/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsa.fd
-File: umsa.fd 2013/01/14 v3.01 AMS symbols A
-)
-LaTeX Font Info:    Trying to load font information for U+msb on input line 54.
-
-
-(/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsb.fd
-File: umsb.fd 2013/01/14 v3.01 AMS symbols B
-) [1{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}
-
-
-] [2]
-Underfull \hbox (badness 1642) in paragraph at lines 161--162
-[]\OT1/ptm/m/n/10 Convert back to agent do-main $\OT1/cmr/m/n/10 [\OMS/cmsy/m/n
-/10 ^^@\OT1/cmr/m/n/10 1\OML/cmm/m/it/10 ; \OT1/cmr/m/n/10 1]$\OT1/ptm/m/n/10 :
- $\OML/cmm/m/it/10 x[] \OT1/cmr/m/n/10 =
- []
-
-[3]
-LaTeX Font Info:    Trying to load font information for TS1+ptm on input line 2
-49.
- (/usr/share/texlive/texmf-dist/tex/latex/psnfss/ts1ptm.fd
-File: ts1ptm.fd 2001/06/04 font definitions for TS1/ptm.
-)
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-[]|\OT1/ptm/m/n/8 Michael Jor-dan
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-[]|\OT1/ptm/m/n/8 Lebron James
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Michael Jor-dan
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Com-mand-ments
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 From Be-ing
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Hung In The
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Class-room Vs
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Com-mand-ments
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 In The
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Com-mand-ments
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 In The
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Class-room Vs
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Com-mand-ments
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 From Be-ing
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Hung In The
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-[]|\OT1/ptm/m/n/8 Banning The
- []
-
-
-Underfull \hbox (badness 3364) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Be-ing Hung In
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 The Class-room
- []
-
-
-Underfull \hbox (badness 5417) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Vs Hang-ing A
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Pride Flag In
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Flag In The
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Class-room Vs
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Ban-ning The
- []
-
-
-Underfull \hbox (badness 3364) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Be-ing Hung In
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-[]|\OT1/ptm/m/n/8 Chocolate Ice
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-[]|\OT1/ptm/m/n/8 Vanilla Ice
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Cream Vs
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 263--263
-\OT1/ptm/m/n/8 Choco-late Ice
- []
-
-
-Underfull \vbox (badness 7777) has occurred while \output is active []
-
- [4]
-<figures/trajectory_israel_vs_palestine.png, id=29, 715.473pt x 425.1885pt>
-File: figures/trajectory_israel_vs_palestine.png Graphic file (type png)
-<use figures/trajectory_israel_vs_palestine.png>
-Package pdftex.def Info: figures/trajectory_israel_vs_palestine.png  used on in
-put line 308.
-(pdftex.def)             Requested size: 252.0pt x 149.75244pt.
-<figures/trajectory_hanging_a_pride_flag_in_the_classroom_vs_banning_the_pride_
-flag_from_being_hung_in_the_classroom.png, id=31, 751.3671pt x 425.1885pt>
-File: figures/trajectory_hanging_a_pride_flag_in_the_classroom_vs_banning_the_p
-ride_flag_from_being_hung_in_the_classroom.png Graphic file (type png)
-<use figures/trajectory_hanging_a_pride_flag_in_the_classroom_vs_banning_the_pr
-ide_flag_from_being_hung_in_the_classroom.png>
-Package pdftex.def Info: figures/trajectory_hanging_a_pride_flag_in_the_classro
-om_vs_banning_the_pride_flag_from_being_hung_in_the_classroom.png  used on inpu
-t line 315.
-(pdftex.def)             Requested size: 252.0pt x 142.60284pt.
-<figures/trajectory_lebron_james_is_the_goat_vs_michael_jordan_is_the_goat.png,
- id=32, 715.473pt x 425.1885pt>
-File: figures/trajectory_lebron_james_is_the_goat_vs_michael_jordan_is_the_goat
-.png Graphic file (type png)
-<use figures/trajectory_lebron_james_is_the_goat_vs_michael_jordan_is_the_goat.
-png>
-Package pdftex.def Info: figures/trajectory_lebron_james_is_the_goat_vs_michael
-_jordan_is_the_goat.png  used on input line 322.
-(pdftex.def)             Requested size: 252.0pt x 149.75244pt.
-<figures/trajectory_chocolate_ice_cream_vs_vanilla_ice_cream.png, id=33, 715.47
-3pt x 425.1885pt>
-File: figures/trajectory_chocolate_ice_cream_vs_vanilla_ice_cream.png Graphic f
-ile (type png)
-<use figures/trajectory_chocolate_ice_cream_vs_vanilla_ice_cream.png>
-Package pdftex.def Info: figures/trajectory_chocolate_ice_cream_vs_vanilla_ice_
-cream.png  used on input line 329.
-(pdftex.def)             Requested size: 252.0pt x 149.75244pt.
-
-Underfull \vbox (badness 5345) has occurred while \output is active []
-
- [5 <./figures/trajectory_israel_vs_palestine.png> <./figures/trajectory_hangin
-g_a_pride_flag_in_the_classroom_vs_banning_the_pride_flag_from_being_hung_in_th
-e_classroom.png>] [6 <./figures/trajectory_lebron_james_is_the_goat_vs_michael_
-jordan_is_the_goat.png> <./figures/trajectory_chocolate_ice_cream_vs_vanilla_ic
-e_cream.png>] [7]
-** WARNING: Ignoring useless \section in Appendix (line 481).
-LaTeX Font Info:    Trying to load font information for OMS+pcr on input line 4
-88.
-(/usr/share/texlive/texmf-dist/tex/latex/psnfss/omspcr.fd
-File: omspcr.fd 
-)
-LaTeX Font Info:    Font shape `OMS/pcr/m/n' in size <9> not available
-(Font)              Font shape `OMS/cmsy/m/n' tried instead on input line 488.
-
-Underfull \hbox (badness 7433) in paragraph at lines 488--489
-\OT1/ptm/m/n/9 cur-rent opin-ion: \OMS/cmsy/m/n/9 f\OT1/pcr/m/n/9 self.current_
-opinion:.3f\OMS/cmsy/m/n/9 g
- []
-
-** WARNING: Ignoring useless \section in Appendix (line 501).
-[8]
-** WARNING: Ignoring useless \section in Appendix (line 535).
-
-Underfull \hbox (badness 1642) in paragraph at lines 559--560
-[]\OT1/ptm/m/n/10 Convert back to agent do-main $\OT1/cmr/m/n/10 [\OMS/cmsy/m/n
-/10 ^^@\OT1/cmr/m/n/10 1\OML/cmm/m/it/10 ; \OT1/cmr/m/n/10 1]$\OT1/ptm/m/n/10 :
- $\OML/cmm/m/it/10 x[] \OT1/cmr/m/n/10 =
- []
-
-
-Underfull \hbox (badness 5592) in paragraph at lines 576--576
-[]|\OT1/ptm/m/n/8 Jordan v Le-
- []
-
-
-Underfull \hbox (badness 1983) in paragraph at lines 578--578
-[]|\OT1/ptm/m/n/8 Ban 10 Com-
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 581--581
-[]|\OT1/ptm/m/n/8 Hang Pride
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 584--584
-[]|\OT1/ptm/m/n/8 Chocolate v
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 585--585
-[]|\OT1/ptm/m/n/8 Vanilla v
- []
-
-
-Overfull \hbox (1.01437pt too wide) in paragraph at lines 568--588
- [][] 
- []
-
-
-** Conference Paper **
-Before submitting the final camera ready copy, remember to:
-
- 1. Manually equalize the lengths of two columns on the last page
- of your paper;
-
- 2. Ensure that any PostScript and/or PDF output post-processing
- uses only Type 1 fonts and that every step in the generation
- process uses the appropriate paper size.
-
-[9] (./paper.aux) ) 
+Enter file name: 
+! Emergency stop.
+<read *> 
+         
+l.35 \input{data}
+                 ^^M 
 Here is how much of TeX's memory you used:
- 3879 strings out of 480247
- 65506 string characters out of 5896151
- 370628 words of memory out of 5000000
- 21765 multiletter control sequences out of 15000+600000
- 512437 words of font info for 113 fonts, out of 8000000 for 9000
+ 3574 strings out of 480247
+ 57542 string characters out of 5896151
+ 338629 words of memory out of 5000000
+ 21528 multiletter control sequences out of 15000+600000
+ 490329 words of font info for 68 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 55i,10n,62p,924b,354s stack positions out of 5000i,500n,10000p,200000b,80000s
-{/usr/share/texlive/texmf-dist/fonts/enc/dvips/base/8r.enc}<
-/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/s
-hare/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/share/t
-exlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi5.pfb></usr/share/texlive/
-texmf-dist/fonts/type1/public/amsfonts/cm/cmmi7.pfb></usr/share/texlive/texmf-d
-ist/fonts/type1/public/amsfonts/cm/cmmi9.pfb></usr/share/texlive/texmf-dist/fon
-ts/type1/public/amsfonts/cm/cmr10.pfb></usr/share/texlive/texmf-dist/fonts/type
-1/public/amsfonts/cm/cmr5.pfb></usr/share/texlive/texmf-dist/fonts/type1/public
-/amsfonts/cm/cmr7.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfont
-s/cm/cmr9.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cms
-y10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb
-></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/
-share/texlive/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/share/texlive
-/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/share/texlive/texmf-dist/fon
-ts/type1/urw/times/utmbi8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/t
-imes/utmr8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmri8a.pf
-b>
-Output written on paper.pdf (9 pages, 1043275 bytes).
-PDF statistics:
- 129 PDF objects out of 1000 (max. 8388607)
- 75 compressed objects within 1 object stream
- 0 named destinations out of 1000 (max. 500000)
- 21 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 55i,1n,62p,277b,152s stack positions out of 5000i,500n,10000p,200000b,80000s
 
+!  ==> Fatal error occurred, no output PDF file produced!

@@ -9,21 +9,77 @@
 \toprule
 Topic & Bias & Error & LLM Mean & DeGroot \\
 \midrule
-Conservatives v Liberals & -0.54 & 3.83 & -0.66 & -0.12 \\
-Liberals v Conservatives & -0.68 & 4.82 & -0.80 & -0.12 \\
-Palestine v Israel & -0.28 & 1.99 & -0.40 & -0.12 \\
-Israel v Palestine & 0.39 & 2.73 & 0.27 & -0.12 \\
-Jordan v LeBron & -0.64 & 4.51 & -0.75 & -0.12 \\
-LeBron v Jordan & -0.67 & 4.75 & -0.79 & -0.12 \\
-Ban 10 Commandments & -0.78 & 5.53 & -0.90 & -0.12 \\
-Hang 10 Commandments & -0.39 & 2.79 & -0.51 & -0.12 \\
-Ban Pride Flag & -0.60 & 4.21 & -0.71 & -0.12 \\
-Hang Pride Flag & -0.80 & 5.68 & -0.92 & -0.12 \\
-Triangles v Circles & 0.68 & 4.82 & 0.56 & -0.12 \\
-Circles v Triangles & -0.30 & 2.15 & -0.42 & -0.12 \\
-Chocolate v Vanilla & 0.84 & 5.93 & 0.72 & -0.12 \\
-Vanilla v Chocolate & 0.89 & 6.27 & 0.77 & -0.12 \\
+Conservatives Vs Liberals & -0.54 & 3.83 & -0.66 & -0.12 \\
+Liberals Vs Conservatives & -0.68 & 4.82 & -0.80 & -0.12 \\
+Palestine Vs Israel & -0.28 & 1.99 & -0.40 & -0.12 \\
+Israel Vs Palestine & 0.39 & 2.73 & 0.27 & -0.12 \\
+Michael Jordan Is The Goat Vs Lebron James Is The Goat & -0.64 & 4.51 & -0.75 & -0.12 \\
+Lebron James Is The Goat Vs Michael Jordan Is The Goat & -0.67 & 4.75 & -0.79 & -0.12 \\
+Banning The 10 Commandments From Being Hung In The Classroom Vs Hanging The 10 Commandments In The Classroom & -0.78 & 5.53 & -0.90 & -0.12 \\
+Hanging The 10 Commandments In The Classroom Vs Banning The 10 Commandments From Being Hung In The Classroom & -0.39 & 2.79 & -0.51 & -0.12 \\
+Banning The Pride Flag From Being Hung In The Classroom Vs Hanging A Pride Flag In The Classroom & -0.60 & 4.21 & -0.71 & -0.12 \\
+Hanging A Pride Flag In The Classroom Vs Banning The Pride Flag From Being Hung In The Classroom & -0.80 & 5.68 & -0.92 & -0.12 \\
+Triangles Vs Circles & 0.68 & 4.82 & 0.56 & -0.12 \\
+Circles Vs Triangles & -0.30 & 2.15 & -0.42 & -0.12 \\
+Chocolate Ice Cream Vs Vanilla Ice Cream & 0.84 & 5.93 & 0.72 & -0.12 \\
+Vanilla Ice Cream Vs Chocolate Ice Cream & 0.89 & 6.27 & 0.77 & -0.12 \\
 \bottomrule
 \end{tabular}
 }
 
+\expandafter\newcommand\csname conservativesvsliberalsBias\endcsname{-0.5410}
+\expandafter\newcommand\csname conservativesvsliberalsError\endcsname{3.8254}
+\expandafter\newcommand\csname conservativesvsliberalsLLMMean\endcsname{-0.6576}
+\expandafter\newcommand\csname conservativesvsliberalsLLMStd\endcsname{0.2548}
+\expandafter\newcommand\csname liberalsvsconservativesBias\endcsname{-0.6820}
+\expandafter\newcommand\csname liberalsvsconservativesError\endcsname{4.8225}
+\expandafter\newcommand\csname liberalsvsconservativesLLMMean\endcsname{-0.7986}
+\expandafter\newcommand\csname liberalsvsconservativesLLMStd\endcsname{0.1740}
+\expandafter\newcommand\csname palestinevsisraelBias\endcsname{-0.2812}
+\expandafter\newcommand\csname palestinevsisraelError\endcsname{1.9881}
+\expandafter\newcommand\csname palestinevsisraelLLMMean\endcsname{-0.3978}
+\expandafter\newcommand\csname palestinevsisraelLLMStd\endcsname{0.2355}
+\expandafter\newcommand\csname israelvspalestineBias\endcsname{0.3859}
+\expandafter\newcommand\csname israelvspalestineError\endcsname{2.7285}
+\expandafter\newcommand\csname israelvspalestineLLMMean\endcsname{0.2693}
+\expandafter\newcommand\csname israelvspalestineLLMStd\endcsname{0.3053}
+\expandafter\newcommand\csname michaeljordanisthegoatvslebronjamesisthegoatBias\endcsname{-0.6377}
+\expandafter\newcommand\csname michaeljordanisthegoatvslebronjamesisthegoatError\endcsname{4.5091}
+\expandafter\newcommand\csname michaeljordanisthegoatvslebronjamesisthegoatLLMMean\endcsname{-0.7543}
+\expandafter\newcommand\csname michaeljordanisthegoatvslebronjamesisthegoatLLMStd\endcsname{0.1819}
+\expandafter\newcommand\csname lebronjamesisthegoatvsmichaeljordanisthegoatBias\endcsname{-0.6717}
+\expandafter\newcommand\csname lebronjamesisthegoatvsmichaeljordanisthegoatError\endcsname{4.7498}
+\expandafter\newcommand\csname lebronjamesisthegoatvsmichaeljordanisthegoatLLMMean\endcsname{-0.7883}
+\expandafter\newcommand\csname lebronjamesisthegoatvsmichaeljordanisthegoatLLMStd\endcsname{0.2097}
+\expandafter\newcommand\csname banningthe10commandmentsfrombeinghungintheclassroomvshangingthe10commandmentsintheclassroomBias\endcsname{-0.7814}
+\expandafter\newcommand\csname banningthe10commandmentsfrombeinghungintheclassroomvshangingthe10commandmentsintheclassroomError\endcsname{5.5251}
+\expandafter\newcommand\csname banningthe10commandmentsfrombeinghungintheclassroomvshangingthe10commandmentsintheclassroomLLMMean\endcsname{-0.8980}
+\expandafter\newcommand\csname banningthe10commandmentsfrombeinghungintheclassroomvshangingthe10commandmentsintheclassroomLLMStd\endcsname{0.2112}
+\expandafter\newcommand\csname hangingthe10commandmentsintheclassroomvsbanningthe10commandmentsfrombeinghungintheclassroomBias\endcsname{-0.3945}
+\expandafter\newcommand\csname hangingthe10commandmentsintheclassroomvsbanningthe10commandmentsfrombeinghungintheclassroomError\endcsname{2.7897}
+\expandafter\newcommand\csname hangingthe10commandmentsintheclassroomvsbanningthe10commandmentsfrombeinghungintheclassroomLLMMean\endcsname{-0.5111}
+\expandafter\newcommand\csname hangingthe10commandmentsintheclassroomvsbanningthe10commandmentsfrombeinghungintheclassroomLLMStd\endcsname{0.1656}
+\expandafter\newcommand\csname banningtheprideflagfrombeinghungintheclassroomvshangingaprideflagintheclassroomBias\endcsname{-0.5952}
+\expandafter\newcommand\csname banningtheprideflagfrombeinghungintheclassroomvshangingaprideflagintheclassroomError\endcsname{4.2086}
+\expandafter\newcommand\csname banningtheprideflagfrombeinghungintheclassroomvshangingaprideflagintheclassroomLLMMean\endcsname{-0.7118}
+\expandafter\newcommand\csname banningtheprideflagfrombeinghungintheclassroomvshangingaprideflagintheclassroomLLMStd\endcsname{0.1677}
+\expandafter\newcommand\csname hangingaprideflagintheclassroomvsbanningtheprideflagfrombeinghungintheclassroomBias\endcsname{-0.8036}
+\expandafter\newcommand\csname hangingaprideflagintheclassroomvsbanningtheprideflagfrombeinghungintheclassroomError\endcsname{5.6825}
+\expandafter\newcommand\csname hangingaprideflagintheclassroomvsbanningtheprideflagfrombeinghungintheclassroomLLMMean\endcsname{-0.9202}
+\expandafter\newcommand\csname hangingaprideflagintheclassroomvsbanningtheprideflagfrombeinghungintheclassroomLLMStd\endcsname{0.2094}
+\expandafter\newcommand\csname trianglesvscirclesBias\endcsname{0.6809}
+\expandafter\newcommand\csname trianglesvscirclesError\endcsname{4.8150}
+\expandafter\newcommand\csname trianglesvscirclesLLMMean\endcsname{0.5643}
+\expandafter\newcommand\csname trianglesvscirclesLLMStd\endcsname{0.3231}
+\expandafter\newcommand\csname circlesvstrianglesBias\endcsname{-0.3039}
+\expandafter\newcommand\csname circlesvstrianglesError\endcsname{2.1490}
+\expandafter\newcommand\csname circlesvstrianglesLLMMean\endcsname{-0.4205}
+\expandafter\newcommand\csname circlesvstrianglesLLMStd\endcsname{0.2764}
+\expandafter\newcommand\csname chocolateicecreamvsvanillaicecreamBias\endcsname{0.8386}
+\expandafter\newcommand\csname chocolateicecreamvsvanillaicecreamError\endcsname{5.9295}
+\expandafter\newcommand\csname chocolateicecreamvsvanillaicecreamLLMMean\endcsname{0.7220}
+\expandafter\newcommand\csname chocolateicecreamvsvanillaicecreamLLMStd\endcsname{0.3537}
+\expandafter\newcommand\csname vanillaicecreamvschocolateicecreamBias\endcsname{0.8865}
+\expandafter\newcommand\csname vanillaicecreamvschocolateicecreamError\endcsname{6.2684}
+\expandafter\newcommand\csname vanillaicecreamvschocolateicecreamLLMMean\endcsname{0.7699}
+\expandafter\newcommand\csname vanillaicecreamvschocolateicecreamLLMStd\endcsname{0.3305}

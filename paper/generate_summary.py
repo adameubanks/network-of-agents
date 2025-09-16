@@ -52,8 +52,22 @@ def generate_paper_summary():
     print(f"   • Paper draft: ✅ Complete")
     print(f"   • Figures generated: ✅ 6 plots")
     print(f"   • Statistical analysis: ✅ Complete")
-    print(f"   • Grok results: ⏳ Pending")
-    print(f"   • GPT-5 results: ⏳ Pending")
+    print(f"   • five_mini results: ⏳ Pending if absent in complete_analysis.csv")
+    print(f"   • grok_mini results: ⏳ Pending if absent in complete_analysis.csv")
+
+    # Per-model aggregates if combined file exists
+    combined_file = Path("figures/complete_analysis.csv")
+    if combined_file.exists():
+        combined = pd.read_csv(combined_file)
+        print(f"\n📦 Per-model aggregates (from complete_analysis.csv)")
+        for model_id in ["five_nano", "five_mini", "grok_mini"]:
+            subset = combined[combined['Model'] == model_id]
+            if subset.empty:
+                print(f"   • {model_id}: ⏳ no rows yet")
+                continue
+            biases = subset['Bias'].astype(float)
+            errors = subset['Fixed-Point Error'].astype(float)
+            print(f"   • {model_id}: avg bias {biases.mean():.3f}, avg error {errors.mean():.3f}, n={len(subset)}")
     
     print(f"\n🎯 KEY FINDINGS FOR PAPER")
     print(f"   • 100% of topics show significant algorithmic fidelity failures")

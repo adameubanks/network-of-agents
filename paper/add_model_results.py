@@ -59,8 +59,13 @@ def add_model_results(model_name, results_dir, output_file="figures/complete_ana
         llm_converged = np.std(llm_final) < 0.1
         degroot_converged = np.std(degroot_final) < 0.1
         
+        # Normalize model display id for downstream tables
+        model_norm = 'five_nano' if model_name.lower() in ['gpt-5-nano', 'five_nano'] else (
+            'five_mini' if model_name.lower() in ['gpt-5-mini', 'five_mini'] else (
+            'grok_mini' if model_name.lower() in ['grok-mini', 'grok_mini'] else model_name))
+
         new_model_data.append({
-            'Model': model_name,
+            'Model': model_norm,
             'Topic': topic,
             'Bias': f"{bias:.4f}",
             'Fixed-Point Error': f"{fixed_point_error:.4f}",
@@ -78,7 +83,7 @@ def add_model_results(model_name, results_dir, output_file="figures/complete_ana
     if not existing_df.empty:
         # Add model column to existing data if it doesn't exist
         if 'Model' not in existing_df.columns:
-            existing_df['Model'] = 'GPT-5-nano'
+            existing_df['Model'] = 'five_nano'
         
         combined_df = pd.concat([existing_df, new_df], ignore_index=True)
     else:
