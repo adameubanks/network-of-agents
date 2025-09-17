@@ -67,9 +67,6 @@ class LLMClient:
         text = self._extract_text_from_model_response(response) or ""
         return text
 
-    def _build_extra_body(self) -> Dict:
-        return {'response_format': {'type': 'text'}} if self._is_gpt5_model() else {}
-
     
     
     def generate_posts(self, topic: str, agents: List, neighbor_posts_per_agent: Optional[List[List[str]]] = None) -> List[str]:

@@ -12,6 +12,9 @@ from pathlib import Path
 import pandas as pd
 from typing import Dict, List, Tuple
 import re
+from .calibration_metrics import (
+    summarize_calibration,
+)
 
 def load_simulation_data(results_dir: str) -> Dict:
     """Load all simulation data from JSON files."""
@@ -94,6 +97,84 @@ def extract_trajectory_data(sim_data: Dict) -> Dict:
     
     return trajectories
 
+
+def extract_calibration_pairs(sim_data: Dict) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
+    """Extract (o, r) pairs per topic for calibration.
+
+    o is the intended opinion in [0,1] used to generate a post;
+    r is the LLM's inferred opinion (rating) in [0,1].
+
+    We align each timestep's inferred_opinion with the previous timestep's opinion,
+    because storage occurs after the opinion update.
+    """
+    pairs: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+    for topic, data in sim_data.items():
+        timesteps = data.get('timesteps')
+        if not isinstance(timesteps, dict):
+            # Backward compatibility: skip if no detailed timesteps
+            continue
+        # Build sorted list of timestep entries
+        sorted_keys = sorted((int(k) for k in timesteps.keys()))
+        if len(sorted_keys) < 2:
+            continue
+        o_list: list = []
+        r_list: list = []
+        for idx in range(1, len(sorted_keys)):
+            prev_ts = timesteps.get(str(sorted_keys[idx - 1]), {})
+            cur_ts = timesteps.get(str(sorted_keys[idx]), {})
+            prev_agents = prev_ts.get('agents', [])
+            cur_agents = cur_ts.get('agents', [])
+            if not prev_agents or not cur_agents:
+                continue
+            n = min(len(prev_agents), len(cur_agents))
+            for i in range(n):
+                try:
+                    # Opinions and inferred_opinions are in [-1,1] in agent domain
+                    o_agent = float(prev_agents[i].get('opinion'))
+                    r_agent = float(cur_agents[i].get('inferred_opinion'))
+                except Exception:
+                    continue
+                # Require both numbers finite
+                if not (np.isfinite(o_agent) and np.isfinite(r_agent)):
+                    continue
+                # Map to [0,1]
+                o_math = (o_agent + 1.0) / 2.0
+                r_math = (r_agent + 1.0) / 2.0
+                # Clip to [0,1]
+                o_math = float(np.clip(o_math, 0.0, 1.0))
+                r_math = float(np.clip(r_math, 0.0, 1.0))
+                o_list.append(o_math)
+                r_list.append(r_math)
+        if o_list and r_list:
+            pairs[topic] = (np.array(o_list, dtype=float), np.array(r_list, dtype=float))
+    return pairs
+
+
+def compute_calibration_summary(sim_data: Dict) -> pd.DataFrame:
+    """Compute calibration summaries per topic as a DataFrame."""
+    pairs = extract_calibration_pairs(sim_data)
+    rows = []
+    for topic, (o, r) in pairs.items():
+        s = summarize_calibration(o, r)
+        s_row = {
+            'topic': topic,
+            'alpha_c': s.get('alpha_c'),
+            'beta_c': s.get('beta_c'),
+            'r2_centered': s.get('r2_centered'),
+            'ece_bins_uniform': s.get('ece_bins_uniform'),
+            'ece_bins_quantile': s.get('ece_bins_quantile'),
+            'ece_isotonic': s.get('ece_isotonic'),
+            'rmse_calib': s.get('rmse_calib'),
+            'css': s.get('css'),
+            'contraction_coeff': s.get('contraction_coeff'),
+            'monotonicity_violation_rate': s.get('monotonicity_violation_rate'),
+            'flip_mean_abs': s.get('flip_mean_abs'),
+            'flip_max_abs': s.get('flip_max_abs'),
+            'n_pairs': int(len(o)),
+        }
+        rows.append(s_row)
+    return pd.DataFrame(rows)
+
 def calculate_metrics(trajectories: Dict) -> Dict:
     """Calculate bias and error metrics for each topic."""
     metrics = {}
@@ -144,8 +225,14 @@ def calculate_metrics(trajectories: Dict) -> Dict:
         bias = final_mean - degroot_final
         error = abs(final_mean - degroot_final)
         
-        # Calculate L2 norm error for fixed-point error (scaled appropriately)
-        l2_error = abs(final_mean - degroot_final) * np.sqrt(50)  # Scale by sqrt(n) for proper L2 norm
+        # Core divergence metrics
+        mae = float(np.mean(np.abs(mean_opinions - degroot_mean_traj))) if len(mean_opinions) == len(degroot_mean_traj) else float(abs(final_mean - degroot_final))
+        rmse = float(np.sqrt(np.mean((mean_opinions - degroot_mean_traj) ** 2))) if len(mean_opinions) == len(degroot_mean_traj) else float(abs(final_mean - degroot_final))
+        # Correlation of trajectories (handle degenerate cases)
+        if len(mean_opinions) == len(degroot_mean_traj) and np.std(mean_opinions) > 0 and np.std(degroot_mean_traj) > 0:
+            corr = float(np.corrcoef(mean_opinions, degroot_mean_traj)[0, 1])
+        else:
+            corr = np.nan
         
         metrics[topic] = {
             'mean_trajectory': mean_opinions,
@@ -154,7 +241,9 @@ def calculate_metrics(trajectories: Dict) -> Dict:
             'final_std': final_std,
             'bias': bias,
             'error': error,
-            'l2_error': l2_error,
+            'mae': mae,
+            'rmse': rmse,
+            'corr': corr,
             'degroot_final': degroot_final,
             'degroot_mean_trajectory': degroot_mean_traj,
             'degroot_std_trajectory': degroot_std_traj
@@ -236,14 +325,14 @@ def generate_latex_data(metrics: Dict, output_file: str):
         # Create table data
         f.write("\\newcommand{\\resultstable}{\n")
         f.write("\\footnotesize\n")
-        f.write("\\begin{tabular}{p{2.0cm}cccc}\n")
+        f.write("\\begin{tabular}{p{2.0cm}cccccc}\n")
         f.write("\\toprule\n")
-        f.write("Topic & Bias & Error & LLM Mean & DeGroot \\\\\n")
+        f.write("Topic & Bias & MAE & RMSE & Corr & LLM Mean & DeGroot \\\n")
         f.write("\\midrule\n")
         
         for topic, data in metrics.items():
             topic_display = topic.replace("_", " ").title()
-            f.write(f"{topic_display} & {data['bias']:.2f} & {data['l2_error']:.2f} & {data['final_mean']:.2f} & {data['degroot_final']:.2f} \\\\\n")
+            f.write(f"{topic_display} & {data['bias']:.2f} & {data.get('mae', np.nan):.2f} & {data.get('rmse', np.nan):.2f} & {data.get('corr', np.nan):.2f} & {data['final_mean']:.2f} & {data['degroot_final']:.2f} \\\n")
         
         f.write("\\bottomrule\n")
         f.write("\\end{tabular}\n")
@@ -257,8 +346,16 @@ def generate_latex_data(metrics: Dict, output_file: str):
                 f"{{{data['bias']:.4f}}}\n"
             )
             f.write(
-                f"\\expandafter\\newcommand\\csname {topic_var}Error\\endcsname"
-                f"{{{data['l2_error']:.4f}}}\n"
+                f"\\expandafter\\newcommand\\csname {topic_var}MAE\\endcsname"
+                f"{{{data.get('mae', np.nan):.4f}}}\n"
+            )
+            f.write(
+                f"\\expandafter\\newcommand\\csname {topic_var}RMSE\\endcsname"
+                f"{{{data.get('rmse', np.nan):.4f}}}\n"
+            )
+            f.write(
+                f"\\expandafter\\newcommand\\csname {topic_var}Corr\\endcsname"
+                f"{{{data.get('corr', np.nan):.4f}}}\n"
             )
             f.write(
                 f"\\expandafter\\newcommand\\csname {topic_var}LLMMean\\endcsname"
@@ -300,50 +397,50 @@ def generate_cross_model_latex(metrics_by_model: Dict[str, Dict], output_file: s
         f.write("% Generated cross-model data for algorithmic fidelity paper\n")
         f.write("% This file is automatically generated by generate_data.py\n\n")
 
-        # Summary macros
-        f.write(f"\\newcommand{{\\cmBiasFiveNano}}{{{avg('bias', 'five_nano')}}}\n")
-        f.write(f"\\newcommand{{\\cmErrorFiveNano}}{{{avg('l2_error', 'five_nano')}}}\n")
-        f.write(f"\\newcommand{{\\cmSymFiveNano}}{{--}}\n")
+        # Dynamic cross-model summary table (only models with data)
+        present_order = ['five_nano', 'grok_mini', 'five_mini']
+        present = [mid for mid in present_order if metrics_by_model.get(mid)]
+        name_map = {
+            'five_nano': '\\modelFiveNano{}',
+            'grok_mini': '\\modelGrokMini{}',
+            'five_mini': '\\modelFiveMini{}',
+        }
 
-        f.write(f"\\newcommand{{\\cmBiasFiveMini}}{{{avg('bias', 'five_mini')}}}\n")
-        f.write(f"\\newcommand{{\\cmErrorFiveMini}}{{{avg('l2_error', 'five_mini')}}}\n")
-        f.write(f"\\newcommand{{\\cmSymFiveMini}}{{--}}\n")
-
-        f.write(f"\\newcommand{{\\cmBiasGrokMini}}{{{avg('bias', 'grok_mini')}}}\n")
-        f.write(f"\\newcommand{{\\cmErrorGrokMini}}{{{avg('l2_error', 'grok_mini')}}}\n")
-        f.write(f"\\newcommand{{\\cmSymGrokMini}}{{--}}\n\n")
-
-        # Cross-model table macro
         f.write("\\newcommand{\\crossmodeltable}{\n")
         f.write("\\begin{tabular}{lcccc}\n")
         f.write("\\toprule\n")
-        f.write("Model & Bias & Error & Symmetry & Notes \\\\n")
+        f.write("Model & Bias & RMSE & Symmetry & Notes \\\\\n")
         f.write("\\midrule\n")
-        f.write("\\modelFiveNano{} (this work) & \\cmBiasFiveNano & \\cmErrorFiveNano & fail & baseline \\\\n")
-        f.write("\\modelFiveMini{} (pending) & \\cmBiasFiveMini & \\cmErrorFiveMini & \\cmSymFiveMini & pending \\\\n")
-        f.write("\\modelGrokMini{} (pending) & \\cmBiasGrokMini & \\cmErrorGrokMini & \\cmSymGrokMini & pending \\\\n")
+        for mid in present:
+            label = name_map.get(mid, mid)
+            bias = avg('bias', mid)
+            rmse = avg('rmse', mid)
+            sym = ('fail' if mid == 'five_nano' else '--')
+            notes = ('baseline' if mid == 'five_nano' else '--')
+            f.write(f"{label} & {bias} & {rmse} & {sym} & {notes} \\\\n")
         f.write("\\bottomrule\n")
         f.write("\\end{tabular}\n")
         f.write("}\n\n")
 
-        # Per-topic cross-model table macro (Bias values) - self-contained table*
+        # Per-topic cross-model table (Bias values), dynamic columns
         f.write("\\newcommand{\\perTopicCrossModelTable}{\n")
         f.write("\\begin{table*}[ht]\\centering\\small\n")
-        f.write("\\begin{tabularx}{\\textwidth}{>{\\raggedright\\arraybackslash}X c c c}\n")
+        colspec = ' '.join(['c'] * len(present))
+        f.write(f"\\begin{{tabularx}}{{\\textwidth}}{{>{{\\raggedright\\arraybackslash}}X {colspec}}}\n")
         f.write("\\toprule\n")
-        f.write("Topic & \\modelFiveNano{} & \\modelFiveMini{} & \\modelGrokMini{} \\\\n")
+        header_models = ' & '.join([name_map.get(mid, mid) for mid in present])
+        f.write(f"Topic & {header_models} \\\\n")
         f.write("\\midrule\n")
         for topic in topics_order:
             topic_display = pretty_labels.get(topic, topic.replace("_", " ").title())
-            def cell(model_id: str) -> str:
-                m = metrics_by_model.get(model_id, {})
-                if topic in m:
-                    return f"{m[topic]['bias']:.2f}"
-                return "--"
-            f.write(f"{topic_display} & {cell('five_nano')} & {cell('five_mini')} & {cell('grok_mini')} \\\\n")
+            cells = []
+            for mid in present:
+                m = metrics_by_model.get(mid, {})
+                cells.append(f"{m[topic]['bias']:.2f}" if topic in m else "--")
+            f.write(f"{topic_display} & {' & '.join(cells)} \\\n")
         f.write("\\bottomrule\n")
         f.write("\\end{tabularx}\n")
-        f.write("\\caption{Per-topic bias by model (placeholders for \\modelFiveMini{} and \\modelGrokMini{}).}\n")
+        f.write("\\caption{Per-topic bias by model.}\n")
         f.write("\\label{tab:cross_model_per_topic}\n")
         f.write("\\end{table*}\n")
         f.write("}\n")
@@ -408,13 +505,24 @@ def main():
     
     print("Extracting post examples...")
     post_examples = extract_post_examples(sim_data)
+
+    # Calibration computation and figures
+    print("Computing calibration summaries...")
+    calib_df = compute_calibration_summary(sim_data)
+    calib_csv = "/home/adam/Projects/IDeA/network-of-agents/paper/figures/calibration_summary.csv"
+    calib_df.to_csv(calib_csv, index=False)
+    print(f"Saved calibration summary to {calib_csv}")
+
+    # Nonlinear reliability diagrams removed
     
     # Print summary statistics
     print("\nSummary Statistics:")
     print(f"Average bias: {np.mean([m['bias'] for m in metrics.values()]):.4f}")
-    print(f"Average error: {np.mean([m['error'] for m in metrics.values()]):.4f}")
+    print(f"Average MAE: {np.nanmean([m.get('mae', np.nan) for m in metrics.values()]):.4f}")
     print(f"Topics with high bias (>0.2): {sum(1 for m in metrics.values() if abs(m['bias']) > 0.2)}")
-    print(f"Topics with high error (>4.0): {sum(1 for m in metrics.values() if m['error'] > 4.0)}")
+    print(f"Topics with high RMSE (>0.2): {sum(1 for m in metrics.values() if m.get('rmse', np.nan) > 0.2)}")
+    if not calib_df.empty:
+        print(f"\nCalibration (aggregate): alpha_c mean={calib_df['alpha_c'].mean():.3f}, beta_c mean={calib_df['beta_c'].mean():.3f}, RMSE mean={calib_df['rmse_calib'].mean():.3f}")
     
     print(f"\nData and visualizations saved to {output_dir}")
     print("LaTeX data files saved to data.tex and data_models.tex")
