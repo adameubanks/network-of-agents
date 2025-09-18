@@ -159,12 +159,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
         # Save to a single per-run file, updating it each timestep
         save_simulation_data(snapshot, run_data_path, config)
 
-    # Extract opinion dynamics configuration
-    model_name = sim_config.get('opinion_dynamics_model', 'degroot')
-    opinion_dynamics_models = config.get('opinion_dynamics_models', {})
-    opinion_dynamics_model_config = opinion_dynamics_models.get(model_name, {}).get('config', {})
-    
-    # Create controller with single topic
+    # Create controller with single topic (DeGroot-only)
     controller = Controller(
         n_agents=sim_config['n_agents'],
         num_timesteps=sim_config['num_timesteps'],
@@ -173,9 +168,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
         random_seed=random_seed,
         llm_enabled=llm_enabled,
         on_timestep=on_timestep,
-        resume_data=resume_data,
-        opinion_dynamics_model=model_name,
-        opinion_dynamics_config=opinion_dynamics_model_config
+        resume_data=resume_data
     )
     
     # Run simulation
@@ -184,22 +177,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
         print(f"Mode: LLM (model={llm_config.get('model_name')})")
     else:
         print(f"Mode: NO-LLM")
-    # Display model name
-    model_display_names = {
-        'degroot': 'Pure DeGroot', 
-        'updating_weights': 'Updating Weights',
-        'trust_distrust': 'Trust-Distrust'
-    }
-    print(f"Opinion Dynamics Model: {model_display_names.get(model_name, model_name).upper()}")
-    
-    if model_name == 'trust_distrust':
-        print(f"  Trust threshold: {opinion_dynamics_model_config.get('trust_threshold')}")
-        print(f"  Distrust threshold: {opinion_dynamics_model_config.get('distrust_threshold')}")
-    elif model_name == 'degroot':
-        print(f"  Epsilon: {opinion_dynamics_model_config.get('epsilon')}")
-    elif model_name == 'updating_weights':
-        print(f"  Epsilon: {opinion_dynamics_model_config.get('epsilon')}")
-        print(f"  Theta: {opinion_dynamics_model_config.get('theta')}")
+    print(f"Opinion Dynamics Model: DEGROOT")
     print(f"Initial opinions: {[agent.get_opinion() for agent in controller.agents]}")
     if resume_data:
         done = len(controller.mean_opinions)

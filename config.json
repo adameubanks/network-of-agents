@@ -2,8 +2,7 @@
   "simulation": {
     "n_agents": 50,
     "num_timesteps": 50,
-    "random_seed": 42,
-    "opinion_dynamics_model": "degroot"
+    "random_seed": 42
   },
   "llm": {
     "enabled": false,
@@ -12,29 +11,5 @@
   },
   "topics": [
     "test topic"
-  ],
-  "opinion_dynamics_models": {
-    "updating_weights": {
-      "model": "updating_weights",
-      "config": {
-        "epsilon": 0.01,
-        "theta": 7
-      }
-    },
-    "degroot": {
-      "model": "degroot",
-      "config": {
-        "epsilon": 0.1
-      }
-    },
-    "trust_distrust": {
-      "model": "trust_distrust", 
-      "config": {
-        "trust_threshold": 0.25,
-        "distrust_threshold": 0.75,
-        "diffusion_rate": 0.25,
-        "solicitation_rate": 5
-      }
-    }
-  }
+  ]
 }
