@@ -5,11 +5,30 @@
     "random_seed": 42
   },
   "llm": {
-    "enabled": false,
+    "enabled": true,
     "api_key_env": "OPENAI_API_KEY",
     "model_name": "gpt-5-nano"
   },
   "topics": [
-    "test topic"
+    ["on the whole, immigration is a good thing for this country", "on the whole, immigration is a bad thing for the country"],
+    ["on the whole, immigration is a bad thing for this country", "on the whole, immigration is a good thing for the country"],
+    ["protection of the environment, even at the risk of curbing economic growth", "economic growth, even if the environment suffers to some extent"],
+    ["economic growth, even if the environment suffers to some extent", "protection of the environment, even at the risk of curbing economic growth"],
+    ["company statements on social issues are important", "company statements on social issues are not important"],
+    ["company statements on social issues are not important", "company statements on social issues are important"],
+    ["gun ownership does more to increase safety by allowing law-abiding citizens to protect themselves", "gun ownership does more to reduce safety by giving too many people access to firearms and increasing misuse"],
+    ["gun ownership does more to reduce safety by giving too many people access to firearms and increasing misuse", "gun ownership does more to increase safety by allowing law-abiding citizens to protect themselves"],
+    ["social media has been a good thing for democracy in the United States", "social media has been a bad thing for democracy in the United States"],
+    ["social media has been a bad thing for democracy in the United States", "social media has been a good thing for democracy in the United States"],
+    ["toilet paper should be hung so the next sheet comes from under the roll", "toilet paper should be hung so the next sheet comes from over the roll"],
+    ["toilet paper should be hung so the next sheet comes from over the roll", "toilet paper should be hung so the next sheet comes from under the roll"],
+    ["a hot dog is a sandwich", "a hot dog is not a sandwich"],
+    ["a hot dog is not a sandwich", "a hot dog is a sandwich"],
+    ["it is acceptable for a couple to not allow children at their wedding", "it is not acceptable for a couple to not allow children at their wedding"],
+    ["it is not acceptable for a couple to not allow children at their wedding", "it is acceptable for a couple to not allow children at their wedding"],
+    ["it is acceptable for a diner to snap their fingers to get the waiter's attention", "it is not acceptable for a diner to snap their fingers to get the waiter's attention"],
+    ["it is not acceptable for a diner to snap their fingers to get the waiter's attention", "it is acceptable for a diner to snap their fingers to get the waiter's attention"],
+    ["human cloning is morally acceptable", "human cloning is morally wrong"],
+    ["human cloning is morally wrong", "human cloning is morally acceptable"]
   ]
 }

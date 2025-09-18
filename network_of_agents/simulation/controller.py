@@ -15,7 +15,6 @@ from ..core.mathematics import update_opinions_pure_degroot, create_connected_de
 
 logger = logging.getLogger(__name__)
 
-
 class Controller:
     """
     Streamlined controller for the network of agents simulation.
@@ -61,8 +60,6 @@ class Controller:
         self.pure_degroot_opinion_history = []
         self.api_call_count = 0
         
-
-        
         if random_seed is not None:
             np.random.seed(random_seed)
         
@@ -79,23 +76,11 @@ class Controller:
             A0 = create_connected_degroot_network(self.n_agents, connectivity=0.05)
             self.network.adjacency_matrix = A0
         
-        # Generate initial graph visualization if LLM is enabled
-        if self.llm_enabled:
-            from ..visualization import plot_initial_network_graph
-            initial_opinions = np.array([agent.get_opinion() for agent in self.agents])
-            initial_adjacency = self.network.get_adjacency_matrix()
-            plot_initial_network_graph(initial_adjacency, initial_opinions, 
-                                     self.topics[0] if self.topics else "Unknown Topic",
-                                     save_path=f"initial_network_graph_{self.n_agents}_agents.png")
-        
         # Simulation state
         self.is_running = False
         self.current_timestep = 0
         
         # Minimal state (no circuit breaker/health)
-        
-
-        
         self.simulation_start_time = None
         
         # Data storage
@@ -147,14 +132,8 @@ class Controller:
         Returns:
             List of initialized agents
         """
-        agents = []
-        
         # Create agents with random opinions
-        for i in range(self.n_agents):
-            agent = Agent(agent_id=i, random_seed=self.random_seed)
-            agents.append(agent)
-        
-        return agents
+        return [Agent(agent_id=i, random_seed=self.random_seed) for i in range(self.n_agents)]
     
     def _calculate_pure_degroot_opinions(self, X_current: np.ndarray, A_current: np.ndarray) -> np.ndarray:
         """Calculate what pure DeGroot would produce for comparison with LLM results."""
@@ -221,7 +200,7 @@ class Controller:
             A_prev = self.network.network_history[-1] if self.network.network_history else A_current
             
             # Step 2: Generate posts and interpretations (LLM) or skip (no-LLM)
-            current_topic = self.topics[0]  # Use single topic for entire simulation
+            current_topic = self.topics[0]  # Use single topic for entire simulation (string or [A,B])
             
             if self.llm_enabled:
                 # Prepare prior-timestep neighbor posts (raw text only)
@@ -374,12 +353,7 @@ class Controller:
         Returns:
             Current opinion vector (n_agents,)
         """
-        opinions = []
-        for agent in self.agents:
-            opinion = agent.get_opinion()
-            opinions.append(opinion)
-        
-        return np.array(opinions)
+        return np.array([agent.get_opinion() for agent in self.agents])
 
     def _to_math_domain(self, x: np.ndarray) -> np.ndarray:
         """Map agent-domain opinions x ∈ [-1, 1] to math-domain s ∈ [0, 1]."""
@@ -451,35 +425,22 @@ class Controller:
         timestep_data = {
             'timestep': self.current_timestep,
             'agents': [],
-            # reply_edges: list of {source, target} extracted from post body mentions (excluding self)
             'reply_edges': []
         }
                 
         for i, agent in enumerate(self.agents):
-            # Find connected neighbors for this agent
-            connections = current_adjacency[i, :]
-            neighbor_indices = np.where(connections == 1)[0]
-            
             # Get agent data
             agent_post = posts[i]
             agent_interpretation = interpretations[i]
-            agent_ratings = individual_ratings[i]
             
-            # Get just the agent IDs that are connected
-            connected_agent_ids = neighbor_indices.tolist()
-            
-            # Format ratings for clarity
-            outgoing_ratings = [{'target': int(j), 'rating': float(r)} for (j, r) in agent_ratings]
-            incoming_ratings = [{'source': int(src), 'rating': float(r)} for (src, r) in incoming_map.get(i, [])]
+            # Format ratings received by this agent (who rated them and what they rated)
+            ratings_received = [{'from_agent': int(src), 'rated_opinion': float(r)} for (src, r) in incoming_map.get(i, [])]
 
             agent_data = {
                 'agent_id': i,
-                'opinion': float(current_opinions[i]),
+                'actual_opinion': float(current_opinions[i]),
                 'post': agent_post,
-                'inferred_opinion': float(agent_interpretation),
-                'connected_agents': connected_agent_ids,
-                'outgoing_ratings': outgoing_ratings,
-                'incoming_ratings': incoming_ratings
+                'ratings_received': ratings_received
             }
             
             timestep_data['agents'].append(agent_data)
@@ -505,7 +466,6 @@ class Controller:
     
     def _store_basic_agent_state(self):
         """Store basic agent information for non-LLM simulations."""
-        current_adjacency = self.network.get_adjacency_matrix()
         current_opinions = self._get_opinion_matrix()
         
         timestep_data = {
@@ -514,27 +474,18 @@ class Controller:
         }
                 
         for i, agent in enumerate(self.agents):
-            # Find connected neighbors for this agent
-            connections = current_adjacency[i, :]
-            neighbor_indices = np.where(connections == 1)[0]
-            
-            # Get just the agent IDs that are connected
-            connected_agent_ids = neighbor_indices.tolist()
-            
             agent_data = {
                 'agent_id': i,
-                'opinion': float(current_opinions[i]),
+                'actual_opinion': float(current_opinions[i]),
                 'post': "No post available (LLM disabled)",
-                'connected_agents': connected_agent_ids
+                'ratings_received': []
             }
             
             timestep_data['agents'].append(agent_data)
         
         self.timesteps.append(timestep_data)
         logger.info(f"Basic agent state stored successfully for timestep {self.current_timestep}")
-    
-
-    
+        
     def _report_health_metrics(self, timestep: int):
         """
         Report health metrics for the simulation.

@@ -15,10 +15,8 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-
 class LLMClient:
     """Minimal client for generating and rating posts."""
-    
     def __init__(self, api_key: Optional[str] = None, model_name: str = None):
         """
         Initialize LLM client.
@@ -45,8 +43,6 @@ class LLMClient:
             return str(self.model_name or "").startswith("gpt-5")
         except Exception:
             return False
-
-    
     
     def _build_llm_params(self) -> Dict:
         """Build parameter dict compatible with model family (gpt-5 vs others)."""
@@ -64,10 +60,7 @@ class LLMClient:
             messages=[{"role": "user", "content": prompt}],
             **llm_params
         )
-        text = self._extract_text_from_model_response(response) or ""
-        return text
-
-    
+        return self._extract_text_from_model_response(response) or ""
     
     def generate_posts(self, topic: str, agents: List, neighbor_posts_per_agent: Optional[List[List[str]]] = None) -> List[str]:
         # Limit neighbor context and truncate to avoid exceeding provider limits
@@ -105,10 +98,6 @@ class LLMClient:
             out.append(f"Agent {agent_id}: {text}")
         return out
     
-    # Neighbor-by-neighbor rating removed for simplicity
-    
-
-    
     def _generate_single_text(self, prompt: str, temperature: float = None) -> str:
         """
         Generate single text using the LLM.
@@ -122,8 +111,6 @@ class LLMClient:
             Generated text
         """
         return self._completion_with_retry_text(prompt)
-    
-
     
     def _call_llm(self, prompts: List[str]) -> List[str]:
         """Call LLM per prompt; return extracted texts."""

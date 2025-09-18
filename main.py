@@ -16,8 +16,6 @@ from network_of_agents.simulation.controller import Controller
 from network_of_agents.llm_client import LLMClient
 from network_of_agents.visualization import save_simulation_data, plot_mean_std, plot_individual_opinions
 
-
-
 def load_config(config_path: str = "config.json") -> Dict[str, Any]:
     """
     Load configuration from JSON file.
@@ -31,7 +29,6 @@ def load_config(config_path: str = "config.json") -> Dict[str, Any]:
     with open(config_path, 'r') as f:
         return json.load(f)
 
-
 def _resolve_logging_level(level_str: Optional[str]) -> int:
     if not level_str:
         return logging.WARNING
@@ -44,14 +41,11 @@ def _resolve_logging_level(level_str: Optional[str]) -> int:
     }
     return mapping.get(level_str.upper(), logging.WARNING)
 
-
 def configure_logging(config: Dict[str, Any]) -> None:
     """Configure global logging to be concise."""
     logging.basicConfig(level=logging.WARNING, format='%(message)s')
     # Silence noisy third-party loggers further
-    for name in [
-        'LiteLLM', 'litellm', 'httpx', 'httpcore', 'openai', 'urllib3'
-    ]:
+    for name in ['LiteLLM', 'litellm', 'httpx', 'httpcore', 'openai', 'urllib3']:
         logging.getLogger(name).setLevel(logging.ERROR)
 
 def create_llm_client(config: Dict[str, Any]) -> Optional[LLMClient]:
@@ -74,14 +68,19 @@ def create_llm_client(config: Dict[str, Any]) -> Optional[LLMClient]:
     if not api_key:
         raise ValueError(f"No API key found in environment variable {api_key_env}")
     
-    # Get model configuration
-    model_name = llm_config.get('model_name')
-        
-    return LLMClient(api_key=api_key, model_name=model_name)
+    return LLMClient(api_key=api_key, model_name=llm_config.get('model_name'))
 
+def _topic_label(topic: Any) -> str:
+    """Human-readable label for printing/filenames. [A,B] -> "A vs B"."""
+    try:
+        if isinstance(topic, (list, tuple)) and len(topic) == 2:
+            a = str(topic[0]).strip(); b = str(topic[1]).strip()
+            return f"{a} vs {b}"
+        return str(topic)
+    except Exception:
+        return str(topic)
 
-def run_simulation(config: Dict[str, Any], topic: str, 
-                   random_seed: Optional[int] = None) -> Dict[str, Any]:
+def run_simulation(config: Dict[str, Any], topic: Any, random_seed: Optional[int] = None) -> Dict[str, Any]:
     """
     Run a single simulation for one topic.
     
@@ -98,20 +97,18 @@ def run_simulation(config: Dict[str, Any], topic: str,
     llm_config = config.get('llm', {})
     llm_enabled = llm_config.get('enabled', True)
 
-    # Noise removed
-    
     # Use provided seed or default from config
     if random_seed is None:
         random_seed = sim_config.get('random_seed')
-    
-
-    
+        
     # Create LLM client
     llm_client = create_llm_client(config)
     
+    # Create label for file paths and logs; keep topic object for prompts
+    topic_label = _topic_label(topic)
     # Setup topic-organized file paths
     results_dir = 'results'
-    topic_safe = topic.replace(' ', '_').replace('/', '_').replace('\\', '_')
+    topic_safe = topic_label.replace(' ', '_').replace('/', '_').replace('\\', '_')
     topic_dir = os.path.join(results_dir, topic_safe)
     os.makedirs(topic_dir, exist_ok=True)
     
@@ -138,7 +135,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
         topic_candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
         for p in topic_candidates:
             data = _load_json(p)
-            if data and data.get('is_partial') and data.get('topic') == topic:
+            if data and data.get('is_partial') and data.get('topic') == topic_label:
                 resume_path = p
                 resume_data = data
                 break
@@ -155,7 +152,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
 
     def on_timestep(snapshot: Dict[str, Any], timestep_index: int) -> None:
         # Ensure topic present for downstream consumers
-        snapshot['topic'] = topic
+        snapshot['topic'] = topic_label
         # Save to a single per-run file, updating it each timestep
         save_simulation_data(snapshot, run_data_path, config)
 
@@ -164,7 +161,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
         n_agents=sim_config['n_agents'],
         num_timesteps=sim_config['num_timesteps'],
         llm_client=llm_client,
-        topics=[topic],  # Single topic only
+        topics=[topic],  # Single topic only, can be [A,B]
         random_seed=random_seed,
         llm_enabled=llm_enabled,
         on_timestep=on_timestep,
@@ -172,7 +169,7 @@ def run_simulation(config: Dict[str, Any], topic: str,
     )
     
     # Run simulation
-    print(f"Starting simulation for topic: {topic}")
+    print(f"Starting simulation for topic: {topic_label}")
     if llm_enabled:
         print(f"Mode: LLM (model={llm_config.get('model_name')})")
     else:
@@ -201,15 +198,14 @@ def run_simulation(config: Dict[str, Any], topic: str,
     final_opinions = results['final_opinions']
     final_avg = sum(final_opinions) / len(final_opinions)
     final_std = (sum((x - final_avg) ** 2 for x in final_opinions) / len(final_opinions)) ** 0.5
-    print(f"Final average opinion for '{topic}': {final_avg:.3f}")
+    print(f"Final average opinion for '{topic_label}': {final_avg:.3f}")
     print(f"Final opinion std dev for '{topic}': {final_std:.3f}")
     print(f"Final opinions: {[f'{op:.3f}' for op in final_opinions]}")
     
     # Add topic to results
-    results['topic'] = topic
+    results['topic'] = topic_label
     
     return results
-
 
 def run_simulations_iteratively(config: Dict[str, Any], random_seed: Optional[int] = None) -> Dict[str, Any]:
     """
@@ -226,20 +222,18 @@ def run_simulations_iteratively(config: Dict[str, Any], random_seed: Optional[in
     all_results = {}
     
     for i, topic in enumerate(topics):
-        print(f"\nTopic {i+1}/{len(topics)}: {topic}")
+        topic_str = _topic_label(topic)
+        print(f"\nTopic {i+1}/{len(topics)}: {topic_str}")
         print("-" * 30)
         
         try:
             results = run_simulation(config, topic, random_seed)
-            all_results[topic] = results
+            all_results[topic_str] = results
         except Exception as e:
-            print(f"Error simulating topic '{topic}': {e}")
-            all_results[topic] = {'error': str(e)}
+            print(f"Error simulating topic '{topic_str}': {e}")
+            all_results[topic_str] = {'error': str(e)}
     
     return all_results
-
-
-
 
 def main():
     """Main function with configuration-driven interface."""
@@ -290,7 +284,6 @@ def main():
             base_name = f"{topic_safe}_{config['simulation']['n_agents']}_{config['simulation']['num_timesteps']}"
             plot_mean_std(results, save_path=f"{topic_dir}/{base_name}_mean_std.png")
             plot_individual_opinions(results, save_path=f"{topic_dir}/{base_name}_individuals.png")
-
-
+            
 if __name__ == "__main__":
     main() 

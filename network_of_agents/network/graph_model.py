@@ -6,12 +6,10 @@ import numpy as np
 import networkx as nx
 from typing import List, Dict, Any, Tuple, Optional
 
-
 class NetworkModel:
     """
     Manages the social network graph structure and provides analysis methods.
     """
-    
     def __init__(self, n_agents: int, random_seed: Optional[int] = None):
         """
         Initialize the network model.
@@ -27,8 +25,6 @@ class NetworkModel:
         self.adjacency_matrix = np.zeros((self.n_agents, self.n_agents))
         self.network_history = []
 
-
-    
     def get_adjacency_matrix(self) -> np.ndarray:
         """
         Get the current adjacency matrix.
@@ -71,8 +67,6 @@ class NetworkModel:
         """
         degrees = np.sum(self.adjacency_matrix, axis=1)
         return np.mean(degrees)
-    
-
     
     def to_dict(self) -> Dict[str, Any]:
         """

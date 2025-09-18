@@ -8,7 +8,6 @@ including opinion dynamics, network evolution, and similarity calculations.
 import numpy as np
 from typing import Tuple
 
-
 def row_normalize(M: np.ndarray, epsilon: float) -> np.ndarray:
     """
     Row-normalize a matrix: R(M) = diag(M1 + ε1))^(-1) M
@@ -20,9 +19,7 @@ def row_normalize(M: np.ndarray, epsilon: float) -> np.ndarray:
     Returns:
         Row-normalized matrix
     """
-    row_sums = M.sum(axis=1, keepdims=True) + epsilon
-    return (1 / row_sums) * M
-
+    return M / (M.sum(axis=1, keepdims=True) + epsilon)
 
 def calculate_DN(M: np.ndarray, epsilon: float) -> np.ndarray:
     """
@@ -37,17 +34,10 @@ def calculate_DN(M: np.ndarray, epsilon: float) -> np.ndarray:
     Returns:
         Row-normalized difference matrix
     """
-    if M.ndim == 1:
-        M = M.reshape(-1, 1)
-    
-    M_expanded = M[:, np.newaxis, :]
-    M_broadcast = M[np.newaxis, :, :]
-    
-    D_M = np.linalg.norm(M_expanded - M_broadcast, ord=1, axis=2)
+    M_2d = M.reshape(-1, 1) if M.ndim == 1 else M
+    D_M = np.linalg.norm(M_2d[:, np.newaxis, :] - M_2d[np.newaxis, :, :], ord=1, axis=2)
     np.fill_diagonal(D_M, 0)
-    
     return row_normalize(D_M, epsilon)
-
 
 def calculate_SN(M: np.ndarray, epsilon: float) -> np.ndarray:
     """
@@ -61,16 +51,10 @@ def calculate_SN(M: np.ndarray, epsilon: float) -> np.ndarray:
     Returns:
         Row-normalized similarity matrix
     """
-    if M.ndim == 1:
-        M = M.reshape(-1, 1)
-    
-    DN_M = calculate_DN(M, epsilon)
-    # Construct 1 - (I + DN(M)) so that diagonal is 0 pre-normalization
+    M_2d = M.reshape(-1, 1) if M.ndim == 1 else M
+    DN_M = calculate_DN(M_2d, epsilon)
     n = DN_M.shape[0]
-    temp_matrix = np.ones_like(DN_M) - (np.eye(n) + DN_M)
-    
-    return row_normalize(temp_matrix, epsilon)
-
+    return row_normalize(np.ones_like(DN_M) - (np.eye(n) + DN_M), epsilon)
 
 def calculate_W(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
     """
@@ -85,25 +69,12 @@ def calculate_W(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
     Returns:
         Weighting matrix W
     """
-    if X_k.ndim == 1:
-        X_k_2d = X_k.reshape(-1, 1)
-    else:
-        X_k_2d = X_k
-    
+    X_k_2d = X_k.reshape(-1, 1) if X_k.ndim == 1 else X_k
     SN_Xk = calculate_SN(X_k_2d, epsilon)
     W_temp = SN_Xk * A_k
-    
-    row_sums_W_temp = W_temp.sum(axis=1)
-    
-    identity_matrix = np.eye(X_k_2d.shape[0])
-    diag_correction = np.diag(row_sums_W_temp)
-    
-    W_Xk_Ak = W_temp + (identity_matrix - diag_correction)
-    # Lightweight sanity check: W should be row-stochastic within tolerance
-    row_sums = W_Xk_Ak.sum(axis=1)
-    assert np.allclose(row_sums, np.ones_like(row_sums), atol=1e-8), "W is not row-stochastic within tolerance"
+    W_Xk_Ak = W_temp + (np.eye(X_k_2d.shape[0]) - np.diag(W_temp.sum(axis=1)))
+    assert np.allclose(W_Xk_Ak.sum(axis=1), np.ones_like(W_Xk_Ak.sum(axis=1)), atol=1e-8), "W is not row-stochastic within tolerance"
     return W_Xk_Ak
-
 
 def update_opinions(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
     """
@@ -117,11 +88,7 @@ def update_opinions(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndar
     Returns:
         Updated opinion vector X[k+1]
     """
-    W_k = calculate_W(X_k, A_k, epsilon)
-    X_next = np.dot(W_k, X_k)
-    
-    return X_next
-
+    return np.dot(calculate_W(X_k, A_k, epsilon), X_k)
 
 def calculate_S_hat(X_k: np.ndarray, theta: int, epsilon: float) -> np.ndarray:
     """
@@ -135,16 +102,8 @@ def calculate_S_hat(X_k: np.ndarray, theta: int, epsilon: float) -> np.ndarray:
     Returns:
         Probabilistic similarity matrix Ŝ[k]
     """
-    if X_k.ndim == 1:
-        X_k_2d = X_k.reshape(-1, 1)
-    else:
-        X_k_2d = X_k
-    
-    SN_Xk = calculate_SN(X_k_2d, epsilon)
-    SN_powered = np.power(SN_Xk, theta)
-    S_hat_k = row_normalize(SN_powered, epsilon)
-    return S_hat_k
-
+    X_k_2d = X_k.reshape(-1, 1) if X_k.ndim == 1 else X_k
+    return row_normalize(np.power(calculate_SN(X_k_2d, epsilon), theta), epsilon)
 
 def update_opinions_pure_degroot(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
     """
@@ -192,10 +151,7 @@ def update_opinions_pure_degroot(X_k: np.ndarray, A_k: np.ndarray, epsilon: floa
     assert np.allclose(W.sum(axis=1), 1.0, atol=1e-10), "W is not row-stochastic"
     
     # DeGroot update: X[k+1] = W X[k]
-    X_next = np.dot(W, X_k)
-    
-    return X_next
-
+    return np.dot(W, X_k)
 
 def create_connected_degroot_network(n_agents: int, connectivity: float = 0.3) -> np.ndarray:
     """
@@ -219,7 +175,6 @@ def create_connected_degroot_network(n_agents: int, connectivity: float = 0.3) -
                 A[j, i] = 1
     
     return A
-
 
 def update_edges(A_k: np.ndarray, X_k: np.ndarray, theta: int, epsilon: float, update_probability: float = 1.0) -> np.ndarray:
     """
