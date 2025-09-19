@@ -202,6 +202,9 @@ class Controller:
             # Step 2: Generate posts and interpretations (LLM) or skip (no-LLM)
             current_topic = self.topics[0]  # Use single topic for entire simulation (string or [A,B])
             
+            # Capture opinions before any updates (used for post generation)
+            pre_update_opinions = self._get_opinion_matrix()
+            
             if self.llm_enabled:
                 # Prepare prior-timestep neighbor posts (raw text only)
                 if self.posts_history and len(self.posts_history[-1]) == len(self.agents):
@@ -300,7 +303,7 @@ class Controller:
 
             # Step 6: Store current state
             if self.llm_enabled:
-                self._store_current_state(posts, neighbor_opinions, individual_ratings)
+                self._store_current_state(posts, neighbor_opinions, individual_ratings, pre_update_opinions)
             else:
                 self._store_current_state(None, None, None)
             
@@ -373,7 +376,7 @@ class Controller:
         for i, agent in enumerate(self.agents):
             agent.update_opinion(new_opinions[i])
     
-    def _store_current_state(self, posts: Optional[List[str]], interpretations: Optional[List[float]], individual_ratings: Optional[List[List[tuple[int, float]]]]):
+    def _store_current_state(self, posts: Optional[List[str]], interpretations: Optional[List[float]], individual_ratings: Optional[List[List[tuple[int, float]]]], pre_update_opinions: Optional[np.ndarray] = None):
         """Store current simulation state."""
         opinions = self._get_opinion_matrix()
         self.opinion_history.append(opinions.copy())
@@ -387,14 +390,14 @@ class Controller:
         
         # Store a per-timestep network snapshot
         if self.llm_enabled and posts is not None and interpretations is not None and individual_ratings is not None:
-            self._store_detailed_agent_state(posts, interpretations, individual_ratings)
+            self._store_detailed_agent_state(posts, interpretations, individual_ratings, pre_update_opinions)
         else:
             self._store_basic_agent_state()
     
-    def _store_detailed_agent_state(self, posts: List[str], interpretations: List[float], individual_ratings: List[List[tuple[int, float]]]):
+    def _store_detailed_agent_state(self, posts: List[str], interpretations: List[float], individual_ratings: List[List[tuple[int, float]]], pre_update_opinions: np.ndarray = None):
         """Store detailed information about each agent at current timestep."""
         current_adjacency = self.network.get_adjacency_matrix()
-        current_opinions = self._get_opinion_matrix()
+        current_opinions = pre_update_opinions if pre_update_opinions is not None else self._get_opinion_matrix()
         import re
         
         # Ensure lists have correct length to avoid index errors
