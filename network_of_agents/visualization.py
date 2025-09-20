@@ -8,10 +8,6 @@ from typing import Dict, Any, List
 import json
 import os
 from datetime import datetime
-import networkx as nx
-import imageio.v2 as imageio
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from matplotlib.patches import Patch
 import re
 
 def _timesteps_as_list(results: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -40,7 +36,9 @@ def _derive_opinion_history_from_timesteps(results: Dict[str, Any]) -> List[List
         for a in ts.get('agents', []) or []:
             try:
                 idx = int(a.get('agent_id'))
-                opinions[idx] = float(a.get('opinion', 0.0))
+                # Try both 'opinion' and 'actual_opinion' fields
+                opinion_value = a.get('opinion', a.get('actual_opinion', 0.0))
+                opinions[idx] = float(opinion_value)
             except Exception:
                 continue
         history.append(opinions)
@@ -57,17 +55,6 @@ def plot_mean_std(results: Dict[str, Any], save_path: str = None):
     mean_opinions = results['mean_opinions']
     std_opinions = results['std_opinions']
     topic = results.get('topic', 'Unknown Topic')
-
-    # Check if results are partial
-    is_partial = results.get('is_partial', False)
-    if is_partial:
-        completed_timesteps = results.get('completed_timesteps', len(mean_opinions))
-        total_timesteps = results.get('total_timesteps', len(mean_opinions))
-        error_msg = results.get('error', 'Unknown error')
-        title_suffix = f" (PARTIAL - {completed_timesteps}/{total_timesteps} timesteps)"
-    else:
-        title_suffix = ""
-
     timesteps = range(len(mean_opinions))
 
     plt.figure(figsize=(16, 12))
@@ -77,24 +64,16 @@ def plot_mean_std(results: Dict[str, Any], save_path: str = None):
                      [m + s for m, s in zip(mean_opinions, std_opinions)],
                      alpha=0.3, color='blue', label='±1 Std Dev')
 
-    # Add vertical line for partial results to show where simulation stopped
-    if is_partial and len(mean_opinions) > 0:
-        plt.axvline(x=len(mean_opinions) - 1, color='red', linestyle='--', alpha=0.7,
-                    label=f'Simulation stopped (timestep {len(mean_opinions)})')
-
     plt.xlabel('Timestep')
     plt.ylabel('Opinion Value')
-    plt.title(f'Mean Opinion for Topic: {topic}{title_suffix}')
+    plt.title(f'Mean Opinion for Topic: {topic}')
     plt.grid(True, alpha=0.3)
     plt.ylim(-1, 1)
     plt.legend()
 
-    if is_partial:
-        plt.suptitle(f"⚠️ PARTIAL RESULTS - Simulation interrupted due to: {error_msg}",
-                     fontsize=12, color='red', y=0.98)
-
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
 
 def plot_individual_opinions(results: Dict[str, Any], save_path: str = None):
     """
@@ -106,17 +85,6 @@ def plot_individual_opinions(results: Dict[str, Any], save_path: str = None):
     """
     opinion_history = _derive_opinion_history_from_timesteps(results)
     topic = results.get('topic', 'Unknown Topic')
-
-    # Check if results are partial
-    is_partial = results.get('is_partial', False)
-    if is_partial:
-        completed_timesteps = results.get('completed_timesteps', len(opinion_history))
-        total_timesteps = results.get('total_timesteps', len(opinion_history))
-        error_msg = results.get('error', 'Unknown error')
-        title_suffix = f" (PARTIAL - {completed_timesteps}/{total_timesteps} timesteps)"
-    else:
-        title_suffix = ""
-
     timesteps = range(len(opinion_history))
 
     plt.figure(figsize=(16, 12))
@@ -125,132 +93,17 @@ def plot_individual_opinions(results: Dict[str, Any], save_path: str = None):
         for i in range(opinion_array.shape[1]):
             plt.plot(timesteps, opinion_array[:, i], label=f'Agent {i}', alpha=0.7, linewidth=1.5)
 
-    # Add vertical line for partial results
-    if is_partial and len(opinion_history) > 0:
-        plt.axvline(x=len(opinion_history) - 1, color='red', linestyle='--', alpha=0.7,
-                    label=f'Simulation stopped (timestep {len(opinion_history)})')
-
     plt.xlabel('Timestep')
     plt.ylabel('Opinion Value')
-    plt.title(f'Individual Agent Opinions for Topic: {topic}{title_suffix}')
+    plt.title(f'Individual Agent Opinions for Topic: {topic}')
     plt.grid(True, alpha=0.3)
     plt.ylim(-1, 1)
     plt.legend(loc='best', ncol=2, fontsize='small')
 
-    if is_partial:
-        plt.suptitle(f"⚠️ PARTIAL RESULTS - Simulation interrupted due to: {error_msg}",
-                     fontsize=12, color='red', y=0.98)
-
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
 
-def plot_network_snapshots(results: Dict[str, Any], graph_dir: str, file_prefix: str) -> List[str]:
-    """
-    Plot the agent connection network for every timestep as separate figures.
-    Nodes colored by opinion sign at that timestep: green (>0), red (<0), gray (==0).
-    Images are saved under graph_dir with the given file_prefix, one per timestep.
-    
-    Args:
-        results: Simulation results dictionary
-        graph_dir: Directory to save graph snapshots (will be created if missing)
-        file_prefix: Filename prefix for saved images (without directory)
-    
-    Returns:
-        List of saved file paths
-    """
-    os.makedirs(graph_dir, exist_ok=True)
-
-    timesteps_data = _timesteps_as_list(results)
-    if not timesteps_data:
-        print("No timestep graph data available; skipping network snapshots.")
-        return []
-
-    topic = results.get('topic', 'Unknown Topic')
-    is_partial = results.get('is_partial', False)
-    if is_partial:
-        completed_timesteps = results.get('completed_timesteps', len(timesteps_data))
-        total_timesteps = results.get('total_timesteps', len(timesteps_data))
-        partial_suffix = f" (PARTIAL - {completed_timesteps}/{total_timesteps} timesteps)"
-    else:
-        partial_suffix = ""
-
-    # Determine number of agents
-    sim_params = results.get('simulation_params', {})
-    n_agents = sim_params.get('n_agents')
-    if n_agents is None:
-        # Fallback: infer from first timestep
-        first_agents = timesteps_data[0].get('agents', [])
-        n_agents = len(first_agents)
-
-    # Build a fixed layout from the first available timestep
-    def build_graph_from_timestep(timestep_index: int) -> nx.Graph:
-        agents_info = timesteps_data[timestep_index].get('agents', [])
-        G = nx.Graph()
-        G.add_nodes_from(range(n_agents))
-        added_edges = set()
-        for agent_info in agents_info:
-            i = agent_info.get('agent_id')
-            neighbors = agent_info.get('connected_agents', [])
-            for j in neighbors:
-                a, b = (i, j) if i <= j else (j, i)
-                if (a, b) not in added_edges:
-                    added_edges.add((a, b))
-                    G.add_edge(a, b)
-        return G
-
-    # Opinion-based layout: x = opinion value, y = small per-node jitter
-    rng = np.random.default_rng(0)
-    y_jitter = rng.normal(0, 0.1, n_agents)
-
-    saved_paths: List[str] = []
-    for t in range(len(timesteps_data)):
-        agents_info = timesteps_data[t].get('agents', [])
-        # Build graph for this timestep
-        Gt = nx.Graph()
-        Gt.add_nodes_from(range(n_agents))
-        added_edges = set()
-        for agent_info in agents_info:
-            i = agent_info.get('agent_id')
-            neighbors = agent_info.get('connected_agents', [])
-            for j in neighbors:
-                a, b = (i, j) if i <= j else (j, i)
-                if (a, b) not in added_edges:
-                    added_edges.add((a, b))
-                    Gt.add_edge(a, b)
-
-        # Node colors and positions by opinion
-        opinions = [0.0] * n_agents
-        for agent_info in agents_info:
-            i = agent_info.get('agent_id')
-            opinions[i] = float(agent_info.get('opinion', 0.0))
-        pos = {i: (opinions[i], float(y_jitter[i])) for i in range(n_agents)}
-        colors = []
-        for val in opinions:
-            if val > 0.0:
-                colors.append('#2ca02c')  # green
-            elif val < 0.0:
-                colors.append('#d62728')  # red
-            else:
-                colors.append('#7f7f7f')  # gray
-
-        plt.figure(figsize=(12, 12))
-        nx.draw_networkx_edges(Gt, pos, edge_color='#cccccc', width=1.0, alpha=0.6)
-        nx.draw_networkx_nodes(Gt, pos, node_color=colors, node_size=400, edgecolors='black', linewidths=0.5)
-        plt.title(f"Network at timestep {t} for Topic: {topic}{partial_suffix}")
-        legend_handles = [
-            Patch(facecolor='#2ca02c', edgecolor='black', label='Opinion > 0'),
-            Patch(facecolor='#d62728', edgecolor='black', label='Opinion < 0'),
-            Patch(facecolor='#7f7f7f', edgecolor='black', label='Opinion = 0')
-        ]
-        plt.legend(handles=legend_handles, loc='best')
-        plt.axis('off')
-        plt.tight_layout()
-
-        save_path = os.path.join(graph_dir, f"{file_prefix}_timestep_{t:03d}.png")
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        saved_paths.append(save_path)
-
-    return saved_paths
 
 def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[str, Any] = None):
     """
@@ -278,14 +131,6 @@ def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[s
         'timesteps': ts_dict,
     }
     
-    # Add partial result information if applicable
-    if results.get('is_partial', False):
-        save_data['is_partial'] = True
-        save_data['interrupted_at_timestep'] = results.get('interrupted_at_timestep')
-        save_data['completed_timesteps'] = results.get('completed_timesteps')
-        save_data['total_timesteps'] = results.get('total_timesteps')
-        save_data['error'] = results.get('error')
-    
     # Add metadata if config is provided
     if config is not None:
         save_data['metadata'] = {
@@ -306,76 +151,6 @@ def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[s
     with open(save_path, 'w') as f:
         json.dump(save_data, f, indent=2)
 
-def render_network_video_from_results(results: Dict[str, Any], graph_dir: str, file_prefix: str, fps: int = 2) -> str:
-    """
-    Render network snapshots directly to an MP4 without saving PNGs.
-    """
-    os.makedirs(graph_dir, exist_ok=True)
-    timesteps_data = _timesteps_as_list(results)
-    if not timesteps_data:
-        print("No timesteps found in results; skipping video rendering.")
-        return ""
-    topic = results.get('topic', 'Unknown Topic')
-    is_partial = results.get('is_partial', False)
-    if is_partial:
-        completed_timesteps = results.get('completed_timesteps', len(timesteps_data))
-        total_timesteps = results.get('total_timesteps', len(timesteps_data))
-        partial_suffix = f" (PARTIAL - {completed_timesteps}/{total_timesteps} timesteps)"
-    else:
-        partial_suffix = ""
-    sim_params = results.get('simulation_params', {})
-    n_agents = sim_params.get('n_agents')
-    if n_agents is None:
-        first_agents = timesteps_data[0].get('agents', [])
-        n_agents = len(first_agents)
-    def build_graph_from_timestep(ti: int) -> nx.Graph:
-        agents_info = timesteps_data[ti].get('agents', [])
-        G = nx.Graph()
-        G.add_nodes_from(range(n_agents))
-        added = set()
-        for agent_info in agents_info:
-            i = agent_info.get('agent_id')
-            for j in agent_info.get('connected_agents', []):
-                a, b = (i, j) if i <= j else (j, i)
-                if (a, b) not in added:
-                    added.add((a, b))
-                    G.add_edge(a, b)
-        return G
-    # Opinion-based layout setup
-    rng = np.random.default_rng(0)
-    y_jitter = rng.normal(0, 0.1, n_agents)
-    output_path = os.path.join(graph_dir, f"{file_prefix}.mp4")
-    print(f"Rendering network video with {len(timesteps_data)} frames to: {output_path}")
-    with imageio.get_writer(output_path, fps=fps) as w:
-        for t in range(len(timesteps_data)):
-            agents_info = timesteps_data[t].get('agents', [])
-            Gt = nx.Graph(); Gt.add_nodes_from(range(n_agents))
-            added = set()
-            for agent_info in agents_info:
-                i = agent_info.get('agent_id')
-                for j in agent_info.get('connected_agents', []):
-                    a, b = (i, j) if i <= j else (j, i)
-                    if (a, b) not in added:
-                        added.add((a, b)); Gt.add_edge(a, b)
-            opinions = [0.0] * n_agents
-            for agent_info in agents_info:
-                opinions[agent_info.get('agent_id')] = float(agent_info.get('opinion', 0.0))
-            colors = ['#2ca02c' if v > 0 else ('#d62728' if v < 0 else '#7f7f7f') for v in opinions]
-            pos = {i: (opinions[i], float(y_jitter[i])) for i in range(n_agents)}
-            fig = plt.figure(figsize=(12, 12), dpi=100)
-            FigureCanvas(fig)
-            nx.draw_networkx_edges(Gt, pos, edge_color='#cccccc', width=1.0, alpha=0.6)
-            nx.draw_networkx_nodes(Gt, pos, node_color=colors, node_size=400, edgecolors='black', linewidths=0.5)
-            plt.title(f"Network at timestep {t} for Topic: {topic}{partial_suffix}")
-            plt.axis('off')
-            plt.tight_layout()
-            fig.canvas.draw()
-            w_w, w_h = fig.canvas.get_width_height()
-            frame = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8).reshape((w_h, w_w, 3))
-            w.append_data(frame)
-            plt.close(fig)
-    print(f"Video saved to: {output_path}")
-    return output_path
 
 def find_reply_edges(results: Dict[str, Any]) -> List[Dict[str, int]]:
     """
@@ -421,3 +196,65 @@ def print_reply_edges(results: Dict[str, Any]) -> None:
         return
     for e in edges:
         print(f"t={e['timestep']} | Agent {e['source']} -> Agent {e['target']}")
+
+def generate_graphs_for_topic(topic_dir: str, json_filename: str = None) -> None:
+    """
+    Generate all visualization graphs for a topic directory.
+    
+    Args:
+        topic_dir: Directory containing the JSON results file
+        json_filename: Optional specific JSON filename (if None, finds the first .json file)
+    """
+    import glob
+    
+    if json_filename is None:
+        json_files = glob.glob(os.path.join(topic_dir, "*.json"))
+        if not json_files:
+            print(f"No JSON files found in {topic_dir}")
+            return
+        json_filename = json_files[0]
+    
+    json_path = os.path.join(topic_dir, json_filename)
+    if not os.path.exists(json_path):
+        print(f"JSON file not found: {json_path}")
+        return
+    
+    print(f"Loading data from: {json_path}")
+    
+    # Load the JSON data
+    with open(json_path, 'r') as f:
+        results = json.load(f)
+    
+    # Extract topic name for file naming
+    topic_name = results.get('topic', 'unknown_topic')
+    safe_topic_name = re.sub(r'[^\w\s-]', '', topic_name).strip()
+    safe_topic_name = re.sub(r'[-\s]+', '_', safe_topic_name)
+    
+    # Generate mean/std plot
+    mean_std_path = os.path.join(topic_dir, f"{safe_topic_name}_mean_std.png")
+    print(f"Generating mean/std plot: {mean_std_path}")
+    plot_mean_std(results, mean_std_path)
+    
+    # Generate individual opinions plot
+    individuals_path = os.path.join(topic_dir, f"{safe_topic_name}_individuals.png")
+    print(f"Generating individual opinions plot: {individuals_path}")
+    plot_individual_opinions(results, individuals_path)
+    
+    print(f"Graph generation complete for topic: {topic_name}")
+
+def generate_all_company_statements_graphs(results_dir: str = "/home/adam/Projects/IDeA/network-of-agents/results") -> None:
+    """Generate graphs for all company_statements topics."""
+    company_dirs = [
+        "company_statements_on_social_issues_are_important_vs_company_statements_on_social_issues_are_not_important",
+        "company_statements_on_social_issues_are_not_important_vs_company_statements_on_social_issues_are_important"
+    ]
+    
+    for topic_dir_name in company_dirs:
+        topic_dir = os.path.join(results_dir, topic_dir_name)
+        if os.path.exists(topic_dir):
+            print(f"\n{'='*60}")
+            print(f"Processing: {topic_dir_name}")
+            print(f"{'='*60}")
+            generate_graphs_for_topic(topic_dir)
+        else:
+            print(f"Directory not found: {topic_dir}")

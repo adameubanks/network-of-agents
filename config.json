@@ -10,7 +10,7 @@
     "model_name": "gpt-5-nano"
   },
   "topics": [
-    ["gun ownership does more to increase safety by allowing law-abiding citizens to protect themselves", "gun ownership does more to reduce safety by giving too many people access to firearms and increasing misuse"],
-    ["gun ownership does more to reduce safety by giving too many people access to firearms and increasing misuse", "gun ownership does more to increase safety by allowing law-abiding citizens to protect themselves"]
+    ["a hot dog is a sandwich", "a hot dog is not a sandwich"],
+    ["a hot dog is not a sandwich", "a hot dog is a sandwich"]
   ]
 }
