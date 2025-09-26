@@ -35,7 +35,7 @@ class LLMClient:
         os.environ["OPENAI_API_KEY"] = self.api_key
         
         self.model_name = model_name
-        self.max_workers = 50
+        self.max_workers = 5
         self.timeout = 60
     
     def _is_gpt5_model(self) -> bool:
@@ -124,7 +124,17 @@ class LLMClient:
             try:
                 results[i] = self._completion_with_retry_text(p)
             except Exception as e:
-                logger.warning(f"LLM call failed: {e}")
+                logger.warning(f"LLM call failed ({e.__class__.__name__}): {repr(e)}")
+                try:
+                    rid = getattr(e, 'request_id', None)
+                    if not rid:
+                        resp = getattr(e, 'response', None)
+                        hdrs = getattr(resp, 'headers', None)
+                        rid = hdrs.get('x-request-id') if isinstance(hdrs, dict) else None
+                    if rid:
+                        logger.warning(f"x-request-id: {rid}")
+                except Exception:
+                    pass
                 results[i] = ""
         workers = min(self.max_workers, max(1, len(prompts)))
         with _f.ThreadPoolExecutor(max_workers=workers) as ex:

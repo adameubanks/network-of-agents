@@ -104,6 +104,49 @@ def plot_individual_opinions(results: Dict[str, Any], save_path: str = None):
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
 
+def plot_llm_degroot_divergence(results: Dict[str, Any], save_path: str = None):
+    """
+    Plot the average distance between LLM and pure DeGroot opinions over time.
+    
+    Args:
+        results: Simulation results dictionary
+        save_path: Optional path to save the plot
+    """
+    llm_vs_pure = results.get('llm_vs_pure_degroot', {})
+    timestep_divergence = llm_vs_pure.get('timestep_divergence', [])
+    
+    if not timestep_divergence:
+        print("No divergence data found in results")
+        return
+    
+    topic = results.get('topic', 'Unknown Topic')
+    timesteps = range(len(timestep_divergence))
+
+    plt.figure(figsize=(12, 8))
+    plt.plot(timesteps, timestep_divergence, 'r-', linewidth=2, marker='o', markersize=4)
+    
+    plt.xlabel('Timestep')
+    plt.ylabel('Average Distance (LLM vs Pure DeGroot)')
+    plt.title(f'LLM-DeGroot Divergence Over Time: {topic}')
+    plt.grid(True, alpha=0.3)
+    plt.ylim(0, max(timestep_divergence) * 1.1 if timestep_divergence else 1)
+    
+    # Add final divergence metrics as text
+    final_divergence = llm_vs_pure.get('final_divergence', {})
+    if final_divergence:
+        mae = final_divergence.get('mae', 0)
+        rmse = final_divergence.get('rmse', 0)
+        correlation = final_divergence.get('correlation', 0)
+        
+        textstr = f'Final MAE: {mae:.4f}\nFinal RMSE: {rmse:.4f}\nCorrelation: {correlation:.4f}'
+        props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+        plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=10,
+                verticalalignment='top', bbox=props)
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
 
 def save_simulation_data(results: Dict[str, Any], save_path: str, config: Dict[str, Any] = None):
     """
@@ -239,6 +282,12 @@ def generate_graphs_for_topic(topic_dir: str, json_filename: str = None) -> None
     individuals_path = os.path.join(topic_dir, f"{safe_topic_name}_individuals.png")
     print(f"Generating individual opinions plot: {individuals_path}")
     plot_individual_opinions(results, individuals_path)
+    
+    # Generate LLM-DeGroot divergence plot (only if LLM data is available)
+    if 'llm_vs_pure_degroot' in results:
+        divergence_path = os.path.join(topic_dir, f"{safe_topic_name}_divergence.png")
+        print(f"Generating LLM-DeGroot divergence plot: {divergence_path}")
+        plot_llm_degroot_divergence(results, divergence_path)
     
     print(f"Graph generation complete for topic: {topic_name}")
 

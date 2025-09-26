@@ -165,6 +165,22 @@ class Controller:
             "correlation": float(correlation)
         }
     
+    def _calculate_timestep_divergence(self) -> List[float]:
+        """Calculate average distance between LLM and pure DeGroot at each timestep."""
+        if not self.llm_enabled or len(self.llm_opinion_history) == 0:
+            return []
+        
+        divergences = []
+        for t in range(len(self.llm_opinion_history)):
+            llm_opinions = np.array(self.llm_opinion_history[t])
+            pure_opinions = np.array(self.pure_degroot_opinion_history[t])
+            
+            # Calculate average absolute distance between the two opinion vectors
+            avg_distance = np.mean(np.abs(llm_opinions - pure_opinions))
+            divergences.append(float(avg_distance))
+        
+        return divergences
+    
     def run_simulation(self, progress_bar: bool = True) -> Dict[str, Any]:
         """
         Run the simulation with LLM post generation and interpretation.
@@ -584,7 +600,8 @@ class Controller:
                     'final_divergence': self._calculate_llm_degroot_divergence(
                         self.llm_opinion_history[-1], 
                         self.pure_degroot_opinion_history[-1]
-                    ) if len(self.llm_opinion_history) > 0 else {}
+                    ) if len(self.llm_opinion_history) > 0 else {},
+                    'timestep_divergence': self._calculate_timestep_divergence()
                 }
         return results
     

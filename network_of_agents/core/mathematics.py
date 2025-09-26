@@ -6,7 +6,8 @@ including opinion dynamics, network evolution, and similarity calculations.
 """
 
 import numpy as np
-from typing import Tuple
+import networkx as nx
+from typing import Tuple, List, Optional
 
 def row_normalize(M: np.ndarray, epsilon: float) -> np.ndarray:
     """
@@ -221,3 +222,267 @@ def update_edges(A_k: np.ndarray, X_k: np.ndarray, theta: int, epsilon: float, u
     assert np.all(np.diag(A_next) == 0), "A_next diagonal is not zero"
 
     return A_next
+
+def update_opinions_friedkin_johnsen(X_k: np.ndarray, A_k: np.ndarray, lambda_values: np.ndarray, epsilon: float) -> np.ndarray:
+    """
+    Friedkin-Johnsen opinion update: X[k+1] = ΛX[0] + (I - Λ)WX[k]
+    
+    The Friedkin-Johnsen model extends DeGroot by allowing agents to have
+    different levels of susceptibility to influence (λ). When λ=1, the agent
+    behaves like in DeGroot. When λ=0, the agent is completely stubborn and
+    never changes from its initial opinion.
+    
+    Args:
+        X_k: Current opinion vector at time k
+        A_k: Adjacency matrix at time k
+        lambda_values: Susceptibility values for each agent (0 ≤ λ ≤ 1)
+        epsilon: Small positive parameter for numerical stability
+        
+    Returns:
+        Updated opinion vector X[k+1]
+    """
+    n = A_k.shape[0]
+    
+    # Create row-stochastic weight matrix W from adjacency matrix A
+    row_sums = A_k.sum(axis=1, keepdims=True)
+    W = np.eye(n)
+    
+    connected_mask = row_sums.flatten() > 0
+    if np.any(connected_mask):
+        W[connected_mask] = A_k[connected_mask] / row_sums[connected_mask]
+    
+    # Create diagonal susceptibility matrix Λ
+    Lambda = np.diag(lambda_values)
+    
+    # Friedkin-Johnsen update: X[k+1] = ΛX[0] + (I - Λ)WX[k]
+    # Note: X[0] (initial opinions) should be passed separately in practice
+    return np.dot(Lambda, X_k) + np.dot(np.eye(n) - Lambda, np.dot(W, X_k))
+
+def create_ring_lattice(n_agents: int, k: int) -> np.ndarray:
+    """
+    Create a ring lattice network where each agent connects to k neighbors on each side.
+    
+    Args:
+        n_agents: Number of agents
+        k: Number of neighbors on each side
+        
+    Returns:
+        Symmetric, hollow adjacency matrix
+    """
+    A = np.zeros((n_agents, n_agents))
+    
+    for i in range(n_agents):
+        for j in range(1, k + 1):
+            # Connect to k neighbors on each side
+            left_neighbor = (i - j) % n_agents
+            right_neighbor = (i + j) % n_agents
+            
+            A[i, left_neighbor] = 1
+            A[i, right_neighbor] = 1
+    
+    return A
+
+def create_watts_strogatz(n_agents: int, k: int, beta: float, random_seed: Optional[int] = None) -> np.ndarray:
+    """
+    Create a Watts-Strogatz small-world network.
+    
+    Args:
+        n_agents: Number of agents
+        k: Number of neighbors on each side in initial ring lattice
+        beta: Rewiring probability (0 ≤ beta ≤ 1)
+        random_seed: Random seed for reproducible results
+        
+    Returns:
+        Symmetric, hollow adjacency matrix
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+    
+    # Start with ring lattice
+    A = create_ring_lattice(n_agents, k)
+    
+    # Rewire edges with probability beta
+    for i in range(n_agents):
+        for j in range(i + 1, n_agents):
+            if A[i, j] == 1 and np.random.rand() < beta:
+                # Remove existing edge
+                A[i, j] = 0
+                A[j, i] = 0
+                
+                # Find a new random connection
+                possible_targets = [x for x in range(n_agents) if x != i and A[i, x] == 0]
+                if possible_targets:
+                    new_target = np.random.choice(possible_targets)
+                    A[i, new_target] = 1
+                    A[new_target, i] = 1
+    
+    return A
+
+def create_barabasi_albert(n_agents: int, m: int, random_seed: Optional[int] = None) -> np.ndarray:
+    """
+    Create a Barabási-Albert scale-free network using preferential attachment.
+    
+    Args:
+        n_agents: Number of agents
+        m: Number of edges each new node forms
+        random_seed: Random seed for reproducible results
+        
+    Returns:
+        Symmetric, hollow adjacency matrix
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+    
+    # Start with m nodes fully connected
+    A = np.zeros((n_agents, n_agents))
+    for i in range(min(m, n_agents)):
+        for j in range(i + 1, min(m, n_agents)):
+            A[i, j] = 1
+            A[j, i] = 1
+    
+    # Add remaining nodes one by one
+    for new_node in range(m, n_agents):
+        # Calculate degree for preferential attachment
+        degrees = np.sum(A, axis=1)
+        total_degree = np.sum(degrees)
+        
+        if total_degree == 0:
+            # Fallback: connect to random existing nodes
+            targets = np.random.choice(new_node, size=min(m, new_node), replace=False)
+        else:
+            # Preferential attachment based on degree
+            probabilities = degrees[:new_node] / total_degree
+            targets = np.random.choice(new_node, size=min(m, new_node), replace=False, p=probabilities)
+        
+        # Connect new node to selected targets
+        for target in targets:
+            A[new_node, target] = 1
+            A[target, new_node] = 1
+    
+    return A
+
+def initialize_opinions_uniform(n_agents: int, random_seed: Optional[int] = None) -> np.ndarray:
+    """
+    Initialize opinions uniformly at random in [-1, 1].
+    
+    Args:
+        n_agents: Number of agents
+        random_seed: Random seed for reproducible results
+        
+    Returns:
+        Array of initial opinions
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+    
+    return np.random.uniform(-1, 1, n_agents)
+
+def initialize_opinions_normal(n_agents: int, mu: float = 0.0, sigma: float = 0.3, random_seed: Optional[int] = None) -> np.ndarray:
+    """
+    Initialize opinions using normal distribution, clipped to [-1, 1].
+    
+    Args:
+        n_agents: Number of agents
+        mu: Mean of the distribution
+        sigma: Standard deviation of the distribution
+        random_seed: Random seed for reproducible results
+        
+    Returns:
+        Array of initial opinions
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+    
+    opinions = np.random.normal(mu, sigma, n_agents)
+    return np.clip(opinions, -1, 1)
+
+def initialize_opinions_polarized(n_agents: int, cluster1_value: float, cluster2_value: float, random_seed: Optional[int] = None) -> np.ndarray:
+    """
+    Initialize opinions in two distinct clusters.
+    
+    Args:
+        n_agents: Number of agents
+        cluster1_value: Opinion value for first cluster
+        cluster2_value: Opinion value for second cluster
+        random_seed: Random seed for reproducible results
+        
+    Returns:
+        Array of initial opinions
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+    
+    # Randomly assign agents to clusters
+    cluster_assignments = np.random.choice([0, 1], size=n_agents)
+    opinions = np.where(cluster_assignments == 0, cluster1_value, cluster2_value)
+    
+    return opinions
+
+def create_complete_graph(n_agents: int) -> np.ndarray:
+    """
+    Create a complete graph where every agent is connected to every other agent.
+    
+    Args:
+        n_agents: Number of agents
+        
+    Returns:
+        Symmetric, hollow adjacency matrix
+    """
+    A = np.ones((n_agents, n_agents))
+    np.fill_diagonal(A, 0)  # Remove self-loops
+    return A
+
+def create_erdos_renyi(n_agents: int, p: float, random_seed: Optional[int] = None) -> np.ndarray:
+    """
+    Create an Erdős-Rényi random graph.
+    
+    Args:
+        n_agents: Number of agents
+        p: Edge probability (0 ≤ p ≤ 1)
+        random_seed: Random seed for reproducible results
+        
+    Returns:
+        Symmetric, hollow adjacency matrix
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+    
+    # Generate random adjacency matrix
+    A = np.random.random((n_agents, n_agents))
+    A = (A < p).astype(float)
+    
+    # Make symmetric and remove self-loops
+    A = np.triu(A, 1) + np.triu(A, 1).T
+    np.fill_diagonal(A, 0)
+    
+    return A
+
+def initialize_opinions_bimodal(n_agents: int, mu1: float, mu2: float, sigma: float, 
+                               weight1: float = 0.5, random_seed: Optional[int] = None) -> np.ndarray:
+    """
+    Initialize opinions using a bimodal distribution (two normal distributions).
+    
+    Args:
+        n_agents: Number of agents
+        mu1: Mean of first distribution
+        mu2: Mean of second distribution
+        sigma: Standard deviation of both distributions
+        weight1: Weight of first distribution (0 ≤ weight1 ≤ 1)
+        random_seed: Random seed for reproducible results
+        
+    Returns:
+        Array of initial opinions
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+    
+    # Determine which distribution each agent belongs to
+    cluster_assignments = np.random.random(n_agents) < weight1
+    
+    # Generate opinions from appropriate distribution
+    opinions = np.zeros(n_agents)
+    opinions[cluster_assignments] = np.random.normal(mu1, sigma, np.sum(cluster_assignments))
+    opinions[~cluster_assignments] = np.random.normal(mu2, sigma, np.sum(~cluster_assignments))
+    
+    # Clip to [-1, 1]
+    return np.clip(opinions, -1, 1)
