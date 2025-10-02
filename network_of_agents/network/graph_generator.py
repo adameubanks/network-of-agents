@@ -102,14 +102,19 @@ def generate_stochastic_block_model(n_agents: int, n_communities: int, p_intra: 
 
 def generate_zachary_karate_club() -> np.ndarray:
     """
-    Generate Zachary's Karate Club network.
+    Generate Zachary's Karate Club network (binary version for opinion dynamics).
     
     Returns:
-        Adjacency matrix (34x34)
+        Binary adjacency matrix (34x34)
     """
     # Load the classic Zachary's Karate Club dataset
     G = nx.karate_club_graph()
-    return nx.adjacency_matrix(G).toarray().astype(float)
+    
+    # Convert to binary (unweighted) for opinion dynamics
+    G_binary = nx.Graph()
+    G_binary.add_edges_from(G.edges())
+    
+    return nx.adjacency_matrix(G_binary).toarray().astype(float)
 
 def generate_network(topology: str, topology_params: Dict[str, Any], 
                     random_seed: Optional[int] = None) -> np.ndarray:

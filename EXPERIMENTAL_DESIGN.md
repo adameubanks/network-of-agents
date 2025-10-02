@@ -11,6 +11,40 @@ Evaluate whether LLMs faithfully reproduce classical opinion dynamics models (De
 3. **Symmetry Violations**: Do LLMs exhibit order-dependent biases when topic framing is reversed?
 4. **Calibration**: How well do LLM opinion distributions match human polling baselines?
 
+## **Experimental Protocol**
+
+### **Phase 1: Mathematical Baseline**
+1. Run all 6 configurations with mathematical models
+2. Determine convergence timesteps (opinion change $< 10^{-6}$)
+3. Generate trajectories and equilibrium points
+
+### **Phase 2: LLM Experiments**
+1. Run 6 configurations × 10 topics = 60 experiments
+2. Use identical timestep counts from Phase 1
+3. Record: opinion trajectories, posts, ratings, final states
+
+### **Phase 3: Symmetry Testing**
+1. Run B vs A orientation for all experiments
+2. Calculate symmetry violations
+3. Identify order-dependent biases
+
+### **Phase 4: Analysis**
+1. Compare LLM vs mathematical final states
+2. Quantify systematic biases by topic/network
+3. Analyze symmetry violations and calibration
+
+## **Experimental Summary**
+
+**Scale**: 6 network topologies × 10 topic pairs × 2 orientations = 120 total experiments
+
+**Networks**: Small-world consensus, scale-free influence, random baseline, echo chambers, empirical karate club, and stubborn agents
+
+**Topics**: Mix of political/social issues (immigration, environment, guns) and apolitical debates (toilet paper, hot dogs) with human polling baselines
+
+**Method**: LLM agents generate posts expressing opinions on [-1,1] scale, then rate neighbor posts, iterating until mathematical convergence timestep
+
+**Metrics**: Algorithmic fidelity ($L_{2}$ norm), systematic bias, symmetry violations, calibration to human baselines
+
 ## **Network Configurations (6)**
 
 ### **6 Canonical Network Configurations**
@@ -24,12 +58,16 @@ We test across diverse network topologies to ensure robust findings across diffe
 - **Model**: DeGroot
 - **Justification**: Captures real-world social clustering + short paths. Parameters from Watts & Strogatz (1998), scaled for cost efficiency. Tests consensus formation in realistic social networks.
 
+![DeGroot Small-World Network](paper/figures/degroot_smallworld_network_with_opinions.png)
+
 #### **2. DeGroot Scale-Free Influence**
 - **Network**: Barabási-Albert scale-free (N=50, m=2)
 - **Visual Structure**: Starts with 2 fully connected agents, then each new agent connects to 2 existing agents with probability proportional to their current degree. Creates a "rich get richer" effect where highly connected agents become even more connected. Results in a few "hub" agents with many connections and many "peripheral" agents with few connections.
 - **Key Properties**: Power-law degree distribution, high degree heterogeneity, few highly connected "influencers" (degree 10-20) and many peripheral agents (degree 2-4).
 - **Model**: DeGroot
 - **Justification**: Models influencer dynamics with power-law degree distribution. Parameters from Barabási & Albert (1999), scaled down. Tests how LLMs handle highly connected "influencer" agents.
+
+![DeGroot Scale-Free Network](paper/figures/degroot_scalefree_network_with_opinions.png)
 
 #### **3. DeGroot Random Baseline**
 - **Network**: Erdős-Rényi random graph (N=50, p=0.1)
@@ -38,12 +76,16 @@ We test across diverse network topologies to ensure robust findings across diffe
 - **Model**: DeGroot
 - **Justification**: Provides baseline random network for comparison. Parameters from Erdős & Rényi (1959), scaled appropriately. Tests basic consensus formation without structural bias.
 
+![DeGroot Random Network](paper/figures/degroot_random_network_with_opinions.png)
+
 #### **4. DeGroot Echo Chambers**
 - **Network**: Stochastic Block Model (N=50, 2 communities, p_intra=0.3, p_inter=0.05)
 - **Visual Structure**: Two distinct clusters of 25 agents each. Within each cluster, agents have a 30% chance of being connected to each other. Between clusters, agents have only a 5% chance of being connected. Creates two "echo chambers" with dense internal connections but sparse cross-connections.
 - **Key Properties**: Dense internal connections within each group, sparse connections between groups, clear community structure, potential for opinion polarization.
 - **Model**: DeGroot
 - **Justification**: Creates echo chambers - crucial for studying polarization. Parameters from community structure literature. Tests whether LLMs can maintain separate opinion clusters.
+
+![DeGroot Echo Chambers Network](paper/figures/degroot_echo_chambers_network_with_opinions.png)
 
 #### **5. DeGroot Zachary's Karate Club**
 - **Network**: Empirical Zachary's Karate Club (34 nodes, 78 edges)
@@ -52,12 +94,16 @@ We test across diverse network topologies to ensure robust findings across diffe
 - **Model**: DeGroot
 - **Justification**: Real empirical network validates against actual social structure. Classic benchmark in network analysis. Tests LLM behavior on real-world social topology.
 
+![DeGroot Zachary's Karate Club Network](paper/figures/degroot_karate_club_network_with_opinions.png)
+
 #### **6. Friedkin-Johnsen Small-World with Stubbornness**
 - **Network**: Watts-Strogatz small-world ($N=50, k=4, \beta=0.1$) + 10% stubborn agents
 - **Visual Structure**: Same small-world structure as Configuration 1, but 5 agents (10%) are designated as "stubborn" and resist changing their opinions. These stubborn agents maintain their initial opinions throughout the simulation, while flexible agents (90%) update based on neighbor influence.
 - **Key Properties**: Small-world structure + short paths, heterogeneous agent types, stubborn agents act as "anchors" preventing full consensus.
 - **Model**: Friedkin-Johnsen with stubborn agents ($\lambda=0.8$, 10% stubborn)
 - **Justification**: Tests if LLMs can handle agent heterogeneity - key for realistic social simulation. Combines small-world structure with realistic stubbornness modeling.
+
+![Friedkin-Johnsen Small-World Network](paper/figures/friedkin_johnsen_smallworld_network_with_opinions.png)
 
 ## **Parameters**
 
@@ -66,6 +112,8 @@ We test across diverse network topologies to ensure robust findings across diffe
 - **Scale**: $[-1, 1]$ for LLM interface, $[0, 1]$ for mathematical models
 - **Conversion**: $X_{\text{math}} = \frac{X_{\text{LLM}} + 1}{2}$
 - **Seed**: Fixed seed (42) for reproducibility
+
+![Initial Opinion Distribution](paper/figures/opinion_distribution.png)
 
 ### **LLM Interface**
 - **Post Generation**: Social media style (1-3 sentences, $\leq$ 320 chars)
@@ -133,35 +181,17 @@ We test across diverse network topologies to ensure robust findings across diffe
 
 ## **Mathematical Models**
 
+We focus on two well-established opinion dynamics models from the literature:
+
 ### **DeGroot Model**
 - **Opinion Vector**: $X[k] \in [0,1]^n$
 - **Weight Matrix**: $W_{ij} = \frac{A_{ij}}{\sum_k A_{ik} + \varepsilon}$
 - **Update Rule**: $X[k+1] = WX[k]$
 - **Properties**: Row stochastic, converges to consensus if strongly connected
+- **Literature**: DeGroot (1974) - foundational model for opinion dynamics
 
 ### **Friedkin-Johnsen Model**
 - **Susceptibility Matrix**: $\Lambda = \text{diag}(\lambda_1, \ldots, \lambda_n)$ where $\lambda_i \in [0,1]$
 - **Update Rule**: $X[k+1] = \Lambda X[0] + (I - \Lambda)WX[k]$
 - **Properties**: Always converges, can maintain polarization with stubborn agents
-
-## **Experimental Protocol**
-
-### **Phase 1: Mathematical Baseline**
-1. Run all 6 configurations with mathematical models
-2. Determine convergence timesteps (opinion change $< 10^{-6}$)
-3. Generate trajectories and equilibrium points
-
-### **Phase 2: LLM Experiments**
-1. Run 6 configurations × 10 topics = 60 experiments
-2. Use identical timestep counts from Phase 1
-3. Record: opinion trajectories, posts, ratings, final states
-
-### **Phase 3: Symmetry Testing**
-1. Run B vs A orientation for all experiments
-2. Calculate symmetry violations
-3. Identify order-dependent biases
-
-### **Phase 4: Analysis**
-1. Compare LLM vs mathematical final states
-2. Quantify systematic biases by topic/network
-3. Analyze symmetry violations and calibration
+- **Literature**: Friedkin & Johnsen (1990) - extends DeGroot with stubbornness

@@ -95,7 +95,9 @@ def run_pure_math_simulation(experiment_name: str, max_timesteps: int = 200) -> 
             new_math_opinions = update_opinions_friedkin_johnsen(
                 math_opinions,
                 adjacency,
-                susceptibility
+                susceptibility,
+                math_opinion_history[0] if math_opinion_history else math_opinions,  # Initial opinions
+                config["model_params"].get("epsilon", 1e-6)
             )
         else:
             raise ValueError(f"Unknown model: {config['model']}")

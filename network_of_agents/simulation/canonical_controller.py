@@ -246,7 +246,9 @@ class CanonicalController:
             new_math_opinions = update_opinions_friedkin_johnsen(
                 math_opinions,
                 adjacency,
-                susceptibility
+                susceptibility,
+                self.opinion_history[0] if self.opinion_history else math_opinions,  # Initial opinions
+                self.model_params.get("epsilon", 1e-6)
             )
         else:
             raise ValueError(f"Unknown model: {self.model}")

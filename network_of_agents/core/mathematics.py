@@ -57,39 +57,6 @@ def calculate_SN(M: np.ndarray, epsilon: float) -> np.ndarray:
     n = DN_M.shape[0]
     return row_normalize(np.ones_like(DN_M) - (np.eye(n) + DN_M), epsilon)
 
-def calculate_W(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
-    """
-    Calculate weighting matrix per Eq. (2):
-    W(X[k], A[k]) := SN(X[k]) ◦ A[k] + (I - diag([SN(X[k]) ◦ A[k]]1))
-    
-    Args:
-        X_k: Opinion vector at time k (single topic)
-        A_k: Adjacency matrix at time k
-        epsilon: Small positive parameter
-        
-    Returns:
-        Weighting matrix W
-    """
-    X_k_2d = X_k.reshape(-1, 1) if X_k.ndim == 1 else X_k
-    SN_Xk = calculate_SN(X_k_2d, epsilon)
-    W_temp = SN_Xk * A_k
-    W_Xk_Ak = W_temp + (np.eye(X_k_2d.shape[0]) - np.diag(W_temp.sum(axis=1)))
-    assert np.allclose(W_Xk_Ak.sum(axis=1), np.ones_like(W_Xk_Ak.sum(axis=1)), atol=1e-8), "W is not row-stochastic within tolerance"
-    return W_Xk_Ak
-
-def update_opinions(X_k: np.ndarray, A_k: np.ndarray, epsilon: float) -> np.ndarray:
-    """
-    Update opinions: X[k+1] = W(X[k], A[k])X[k]
-    
-    Args:
-        X_k: Opinion vector at time k (single topic)
-        A_k: Adjacency matrix at time k
-        epsilon: Small positive parameter
-        
-    Returns:
-        Updated opinion vector X[k+1]
-    """
-    return np.dot(calculate_W(X_k, A_k, epsilon), X_k)
 
 def calculate_S_hat(X_k: np.ndarray, theta: int, epsilon: float) -> np.ndarray:
     """
@@ -223,7 +190,7 @@ def update_edges(A_k: np.ndarray, X_k: np.ndarray, theta: int, epsilon: float, u
 
     return A_next
 
-def update_opinions_friedkin_johnsen(X_k: np.ndarray, A_k: np.ndarray, lambda_values: np.ndarray, epsilon: float) -> np.ndarray:
+def update_opinions_friedkin_johnsen(X_k: np.ndarray, A_k: np.ndarray, lambda_values: np.ndarray, X_0: np.ndarray, epsilon: float) -> np.ndarray:
     """
     Friedkin-Johnsen opinion update: X[k+1] = ΛX[0] + (I - Λ)WX[k]
     
@@ -236,6 +203,7 @@ def update_opinions_friedkin_johnsen(X_k: np.ndarray, A_k: np.ndarray, lambda_va
         X_k: Current opinion vector at time k
         A_k: Adjacency matrix at time k
         lambda_values: Susceptibility values for each agent (0 ≤ λ ≤ 1)
+        X_0: Initial opinion vector (for stubborn agents)
         epsilon: Small positive parameter for numerical stability
         
     Returns:
@@ -255,8 +223,7 @@ def update_opinions_friedkin_johnsen(X_k: np.ndarray, A_k: np.ndarray, lambda_va
     Lambda = np.diag(lambda_values)
     
     # Friedkin-Johnsen update: X[k+1] = ΛX[0] + (I - Λ)WX[k]
-    # Note: X[0] (initial opinions) should be passed separately in practice
-    return np.dot(Lambda, X_k) + np.dot(np.eye(n) - Lambda, np.dot(W, X_k))
+    return np.dot(Lambda, X_0) + np.dot(np.eye(n) - Lambda, np.dot(W, X_k))
 
 def create_ring_lattice(n_agents: int, k: int) -> np.ndarray:
     """
