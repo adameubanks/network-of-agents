@@ -1,0 +1,43 @@
+{
+  "experiment": {
+    "name": "LLM Algorithmic Fidelity Study",
+    "random_seed": 42,
+    "max_timesteps": 1000
+  },
+  "topics": [
+    "immigration",
+    "environment_economy", 
+    "corporate_activism",
+    "gun_safety",
+    "social_media",
+    "toilet_paper",
+    "hot_dog",
+    "child_free_weddings",
+    "restaurant_etiquette",
+    "human_cloning"
+  ],
+  "networks": [
+    "smallworld",
+    "scalefree", 
+    "random",
+    "echo",
+    "karate",
+    "stubborn"
+  ],
+  "experiments": [
+    {
+      "name": "mathematical_baseline",
+      "llm_enabled": false
+    },
+    {
+      "name": "llm_gpt5_mini",
+      "llm_enabled": true,
+      "llm_model": "gpt-5-mini"
+    },
+    {
+      "name": "llm_gpt5_nano", 
+      "llm_enabled": true,
+      "llm_model": "gpt-5-nano"
+    }
+  ]
+}

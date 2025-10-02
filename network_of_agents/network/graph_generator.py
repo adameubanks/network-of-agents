@@ -129,7 +129,7 @@ def generate_network(topology: str, topology_params: Dict[str, Any],
     Returns:
         Adjacency matrix
     """
-    if topology == "watts_strogatz":
+    if topology == "smallworld":
         return generate_watts_strogatz(
             n_agents=topology_params["n_agents"],
             k=topology_params["k"],
@@ -137,21 +137,21 @@ def generate_network(topology: str, topology_params: Dict[str, Any],
             random_seed=random_seed
         )
     
-    elif topology == "barabasi_albert":
+    elif topology == "scalefree":
         return generate_barabasi_albert(
             n_agents=topology_params["n_agents"],
             m=topology_params["m"],
             random_seed=random_seed
         )
     
-    elif topology == "erdos_renyi":
+    elif topology == "random":
         return generate_erdos_renyi(
             n_agents=topology_params["n_agents"],
             p=topology_params["p"],
             random_seed=random_seed
         )
     
-    elif topology == "stochastic_block_model":
+    elif topology == "echo":
         return generate_stochastic_block_model(
             n_agents=topology_params["n_agents"],
             n_communities=topology_params["n_communities"],
@@ -160,8 +160,13 @@ def generate_network(topology: str, topology_params: Dict[str, Any],
             random_seed=random_seed
         )
     
-    elif topology == "zachary_karate_club":
+    elif topology == "karate":
         return generate_zachary_karate_club()
+    
+    elif topology == "stubborn":
+        # For stubborn topology, we need to use the topology classes
+        # This is a special case that requires the Stubborn topology class
+        raise NotImplementedError("Stubborn topology requires using topology classes directly")
     
     else:
         raise ValueError(f"Unknown topology: {topology}")
@@ -179,15 +184,32 @@ def create_network_model(topology: str, topology_params: Dict[str, Any],
     Returns:
         NetworkModel instance with the generated network
     """
-    # Generate adjacency matrix
-    adjacency_matrix = generate_network(topology, topology_params, random_seed)
-    
-    # Create network model
-    n_agents = adjacency_matrix.shape[0]
-    network_model = NetworkModel(n_agents, random_seed)
-    network_model.update_adjacency_matrix(adjacency_matrix)
-    
-    return network_model
+    if topology == "stubborn":
+        # Special case: use topology classes for stubborn networks
+        from ..topologies.stubborn import Stubborn
+        
+        stubborn_topology = Stubborn(topology_params)
+        adjacency_matrix = stubborn_topology.generate_network(random_seed)
+        
+        # Create network model
+        n_agents = adjacency_matrix.shape[0]
+        network_model = NetworkModel(n_agents, random_seed)
+        network_model.update_adjacency_matrix(adjacency_matrix)
+        
+        # Store the topology object for access to lambda values
+        network_model.topology = stubborn_topology
+        
+        return network_model
+    else:
+        # Generate adjacency matrix
+        adjacency_matrix = generate_network(topology, topology_params, random_seed)
+        
+        # Create network model
+        n_agents = adjacency_matrix.shape[0]
+        network_model = NetworkModel(n_agents, random_seed)
+        network_model.update_adjacency_matrix(adjacency_matrix)
+        
+        return network_model
 
 def get_network_info(adjacency_matrix: np.ndarray) -> Dict[str, Any]:
     """

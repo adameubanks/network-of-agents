@@ -505,64 +505,6 @@ class Controller:
         self.timesteps.append(timestep_data)
         logger.info(f"Basic agent state stored successfully for timestep {self.current_timestep}")
         
-    def _report_health_metrics(self, timestep: int):
-        """
-        Report health metrics for the simulation.
-        
-        Args:
-            timestep: Current timestep number
-        """
-        if not self.timestep_times:
-            return
-        
-        # Calculate performance metrics
-        avg_timestep_time = sum(self.timestep_times) / len(self.timestep_times)
-        recent_timestep_time = self.timestep_times[-1] if self.timestep_times else 0
-        
-        # Calculate LLM metrics
-        llm_success_rate = (self.llm_success_count / max(self.llm_total_calls, 1)) * 100 if self.llm_total_calls > 0 else 0
-        
-        # Calculate estimated completion time
-        remaining_timesteps = self.num_timesteps - timestep - 1
-        estimated_completion_time = remaining_timesteps * avg_timestep_time
-        
-        # Report metrics
-        logger.info(f"=== HEALTH METRICS (Timestep {timestep + 1}/{self.num_timesteps}) ===")
-        logger.info(f"Average timestep time: {avg_timestep_time:.2f}s")
-        logger.info(f"Last timestep time: {recent_timestep_time:.2f}s")
-        logger.info(f"LLM success rate: {llm_success_rate:.1f}% ({self.llm_success_count}/{self.llm_total_calls})")
-        logger.info(f"Circuit breaker status: {'OPEN' if self.llm_circuit_open else 'CLOSED'}")
-        logger.info(f"Estimated completion time: {estimated_completion_time:.1f}s")
-        
-        if self.simulation_start_time:
-            elapsed_time = time.time() - self.simulation_start_time
-            logger.info(f"Total elapsed time: {elapsed_time:.1f}s")
-        
-        logger.info("=" * 50)
-    
-    def get_health_summary(self) -> Dict[str, Any]:
-        """
-        Get a summary of simulation health metrics.
-        
-        Returns:
-            Dictionary containing health metrics
-        """
-        if not self.timestep_times:
-            return {}
-        
-        avg_timestep_time = sum(self.timestep_times) / len(self.timestep_times)
-        llm_success_rate = (self.llm_success_count / max(self.llm_total_calls, 1)) * 100 if self.llm_total_calls > 0 else 0
-        
-        return {
-            'total_timesteps': len(self.timestep_times),
-            'average_timestep_time': avg_timestep_time,
-            'llm_total_calls': self.llm_total_calls,
-            'llm_success_count': self.llm_success_count,
-            'llm_failure_count': self.llm_failure_count,
-            'llm_success_rate': llm_success_rate,
-            'circuit_breaker_open': self.llm_circuit_open,
-            'circuit_breaker_failure_count': self.llm_failure_count
-        }
     
     def _get_simulation_results(self) -> Dict[str, Any]:
         """
