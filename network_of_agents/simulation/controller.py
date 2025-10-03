@@ -58,7 +58,13 @@ class Controller:
         # Metrics for comparing LLM vs pure DeGroot
         self.llm_opinion_history = []
         self.pure_degroot_opinion_history = []
-        self.api_call_count = 0
+        
+        # LLM simulation data storage
+        self.posts_history = []
+        self.interpretations_history = []
+        self.individual_ratings_history = []
+        self.neighbor_opinions_history = []
+        self.pre_update_opinions_history = []
         
         if random_seed is not None:
             np.random.seed(random_seed)
@@ -155,8 +161,16 @@ class Controller:
         # Maximum Absolute Error
         max_error = np.max(np.abs(llm_opinions - pure_opinions))
         
-        # Correlation coefficient
-        correlation = np.corrcoef(llm_opinions, pure_opinions)[0, 1] if len(llm_opinions) > 1 else 0.0
+        # Correlation coefficient - handle NaN cases
+        try:
+            if len(llm_opinions) > 1 and np.std(llm_opinions) > 0 and np.std(pure_opinions) > 0:
+                correlation = np.corrcoef(llm_opinions, pure_opinions)[0, 1]
+                if np.isnan(correlation):
+                    correlation = 0.0
+            else:
+                correlation = 0.0
+        except:
+            correlation = 0.0
         
         return {
             "mae": float(mae),
@@ -289,21 +303,7 @@ class Controller:
                 # Calculate divergence metrics
                 divergence_metrics = self._calculate_llm_degroot_divergence(X_interpreted, pure_degroot_opinions)
 
-                # Count API calls (post generation + rating)
-                if posts is not None:
-                    # Count post generation calls (one per connected agent)
-                    connected_agents = np.sum(A_current.sum(axis=1) > 0)
-                    self.api_call_count += connected_agents
-
-                    # Count rating calls (one per connected pair)
-                    rating_calls = 0
-                    for i in range(self.n_agents):
-                        neighbors = np.where(A_current[i] == 1)[0]
-                        rating_calls += len(neighbors)
-                    self.api_call_count += rating_calls
-
-                    logger.info(f"Timestep {timestep}: {connected_agents} post generation calls, {rating_calls} rating calls, "
-                              f"MAE: {divergence_metrics['mae']:.4f}, Correlation: {divergence_metrics['correlation']:.4f}")
+                logger.info(f"Timestep {timestep}: MAE: {divergence_metrics['mae']:.4f}, Correlation: {divergence_metrics['correlation']:.4f}")
             else:
                 X_interpreted = X_current.copy()
 
@@ -323,7 +323,7 @@ class Controller:
             else:
                 self._store_current_state(None, None, None)
             
-            # Record simple timing
+            # Record timing
             _ = time.time() - timestep_start_time
 
             # Invoke per-timestep callback with partial results snapshot
@@ -404,8 +404,12 @@ class Controller:
         self.mean_opinions.append(mean_opinion)
         self.std_opinions.append(std_opinion)
         
-        # Store a per-timestep network snapshot
+        # Store LLM data if available (posts are already stored in main loop)
         if self.llm_enabled and posts is not None and interpretations is not None and individual_ratings is not None:
+            self.interpretations_history.append(interpretations.copy())
+            self.individual_ratings_history.append(individual_ratings.copy())
+            if pre_update_opinions is not None:
+                self.pre_update_opinions_history.append(pre_update_opinions.copy())
             self._store_detailed_agent_state(posts, interpretations, individual_ratings, pre_update_opinions)
         else:
             self._store_basic_agent_state()
@@ -424,15 +428,17 @@ class Controller:
         if len(individual_ratings) != self.n_agents:
             individual_ratings = [[] for _ in range(self.n_agents)]
         
-        # Build incoming ratings map: for each target j, collect (source i, rating)
-        incoming_map: Dict[int, List[tuple[int, float]]] = {j: [] for j in range(self.n_agents)}
+        # Build ratings matrix: who rated whom and what they rated
+        ratings_matrix = {}
         try:
             for i, out_list in enumerate(individual_ratings or []):
                 if not out_list:
                     continue
                 for (j, r) in out_list:
                     try:
-                        incoming_map[int(j)].append((int(i), float(r)))
+                        if j not in ratings_matrix:
+                            ratings_matrix[j] = {}
+                        ratings_matrix[int(j)][int(i)] = float(r)
                     except Exception:
                         continue
         except Exception:
@@ -453,13 +459,21 @@ class Controller:
             agent_interpretation = interpretations[i]
             
             # Format ratings received by this agent (who rated them and what they rated)
-            ratings_received = [{'from_agent': int(src), 'rated_opinion': float(r)} for (src, r) in incoming_map.get(i, [])]
+            ratings_received = []
+            if i in ratings_matrix:
+                for rater_id, rating in ratings_matrix[i].items():
+                    ratings_received.append({
+                        'rater_agent': int(rater_id), 
+                        'rating': float(rating),
+                        'rater_opinion': float(current_opinions[rater_id])
+                    })
 
             agent_data = {
                 'agent_id': i,
-                'actual_opinion': float(current_opinions[i]),
+                'opinion': float(current_opinions[i]),
                 'post': agent_post,
-                'ratings_received': ratings_received
+                'ratings_received': ratings_received,
+                'neighbor_opinions': [float(current_opinions[j]) for j in range(self.n_agents) if current_adjacency[i, j] == 1]
             }
             
             timestep_data['agents'].append(agent_data)
@@ -532,13 +546,15 @@ class Controller:
         if self.llm_enabled:
             results['posts_history'] = self.posts_history
             results['interpretations_history'] = self.interpretations_history
+            results['individual_ratings'] = self.individual_ratings_history
+            results['neighbor_opinions'] = self.neighbor_opinions_history
+            results['pre_update_opinions'] = [op.tolist() for op in self.pre_update_opinions_history]
             
             # Add LLM vs Pure DeGroot comparison metrics
             if len(self.llm_opinion_history) > 0:
                 results['llm_vs_pure_degroot'] = {
                     'llm_opinion_history': [op.tolist() for op in self.llm_opinion_history],
                     'pure_degroot_opinion_history': [op.tolist() for op in self.pure_degroot_opinion_history],
-                    'api_call_count': self.api_call_count,
                     'final_divergence': self._calculate_llm_degroot_divergence(
                         self.llm_opinion_history[-1], 
                         self.pure_degroot_opinion_history[-1]

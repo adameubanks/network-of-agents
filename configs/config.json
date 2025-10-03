@@ -4,6 +4,7 @@
     "random_seed": 42,
     "max_timesteps": 1000
   },
+  "topology": "smallworld",
   "topics": [
     "immigration",
     "environment_economy", 
@@ -24,20 +25,13 @@
     "karate",
     "stubborn"
   ],
-  "experiments": [
-    {
-      "name": "mathematical_baseline",
-      "llm_enabled": false
-    },
-    {
-      "name": "llm_gpt5_mini",
-      "llm_enabled": true,
-      "llm_model": "gpt-5-mini"
-    },
-    {
-      "name": "llm_gpt5_nano", 
-      "llm_enabled": true,
-      "llm_model": "gpt-5-nano"
-    }
-  ]
+  "llm": {
+    "model": "gpt-5-nano",
+    "enabled": false
+  },
+  "analysis": {
+    "create_visualizations": true,
+    "save_detailed_results": true,
+    "calculate_metrics": true
+  }
 }
