@@ -1,6 +1,6 @@
 {
   "experiment": {
-    "name": "DeGroot Smallworld Convergence Test",
+    "name": "DegrootSmallWorldAllTopics",
     "random_seed": 42
   },
   "topologies": [
@@ -10,11 +10,21 @@
     "degroot"
   ],
   "topics": [
-    "immigration"
+    "immigration",
+    "environment_economy",
+    "corporate_activism",
+    "gun_safety",
+    "social_media_democracy",
+    "toilet_paper",
+    "hot_dog_sandwich",
+    "child_free_weddings",
+    "restaurant_etiquette",
+    "human_cloning"
   ],
   "n_agents": 50,
+  "checkpoint_interval": 5,
   "convergence_steps": {
-    "smallworld": 3
+    "smallworld": 31
   },
   "llm": {
     "model": "gpt-5-nano",

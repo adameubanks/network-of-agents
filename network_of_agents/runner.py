@@ -23,47 +23,63 @@ from .core.mathematics import (
     initialize_opinions_normal, get_network_info, check_convergence
 )
 
-# Topic mapping to match experimental design
 TOPIC_MAPPING = {
+    # Source: Gallup Poll
     "immigration": (
-        "Immigration is a good thing for this country",
-        "Immigration is a bad thing for this country"
+        "immigration is a good thing for this country",
+        "immigration is a bad thing for this country"
     ),
+
+    # Source: Gallup Poll
     "environment_economy": (
-        "Prioritize environmental protection even if growth is curbed",
-        "Prioritize economic growth even if the environment suffers"
+        "protection of the environment should be given priority, even at the risk of curbing economic growth",
+        "economic growth should be given priority, even if the environment suffers to some extent"
     ),
+
+    # Source: Ipsos/Axios Poll (Note: "appropriate" vs. "inappropriate")
     "corporate_activism": (
-        "Companies should make statements about political/social issues",
-        "Companies should not make statements about political/social issues"
+        "it is appropriate for American companies to make public statements about political or social issues",
+        "it is inappropriate for American companies to make public statements about political or social issues"
     ),
+
+    # Source: Pew Research Center
     "gun_safety": (
-        "Gun ownership increases safety",
-        "Gun ownership reduces safety"
+        "Gun ownership in this country does more to increase safety by allowing law-abiding citizens to protect themselves",
+        "Gun ownership in this country does more to reduce safety by giving too many people access to firearms and increasing the risk of misuse"
     ),
+
+    # Source: Pew Research Center
     "social_media_democracy": (
-        "Social media has been good for democracy",
-        "Social media has been bad for democracy"
+        "social media has been a good thing for democracy",
+        "social media has been a bad thing for democracy"
     ),
-    "toilet_paper": (
-        "Toilet paper should go over the roll",
-        "Toilet paper should go under the roll"
-    ),
-    "hot_dog_sandwich": (
-        "A hot dog is a sandwich",
-        "A hot dog is not a sandwich"
-    ),
-    "child_free_weddings": (
-        "Child-free weddings are appropriate",
-        "Child-free weddings are inappropriate"
-    ),
-    "restaurant_etiquette": (
-        "Snapping fingers to get waiter attention is acceptable",
-        "Snapping fingers to get waiter attention is unacceptable"
-    ),
+    
+    # Source: Gallup Poll
     "human_cloning": (
-        "Human cloning is morally acceptable",
-        "Human cloning is morally wrong"
+        "cloning humans is morally acceptable",
+        "cloning humans is morally wrong"
+    ),
+
+    # --- Topics without direct survey matches found ---
+    
+    "toilet_paper": (
+        "toilet paper should go over the roll",
+        "toilet paper should go under the roll"
+    ),
+
+    "hot_dog_sandwich": (
+        "a hot dog is a sandwich",
+        "a hot dog is not a sandwich"
+    ),
+
+    "child_free_weddings": (
+        "child-free weddings are appropriate",
+        "child-free weddings are inappropriate"
+    ),
+
+    "restaurant_etiquette": (
+        "snapping fingers to get waiter attention is acceptable",
+        "snapping fingers to get waiter attention is unacceptable"
     )
 }
 
@@ -89,12 +105,8 @@ def _load_convergence_steps(network_type: str, model: str, config_convergence_st
         return max_steps
 
 def get_topic_framing(topic_key: str) -> Tuple[str, str]:
-    """Get the proper A vs B framing for a topic key."""
-    if topic_key in TOPIC_MAPPING:
-        return TOPIC_MAPPING[topic_key]
-    else:
-        # Fallback for unknown topics
-        return (f"Option A for {topic_key}", f"Option B for {topic_key}")
+    """Get topic framing for LLM prompts."""
+    return TOPIC_MAPPING.get(topic_key, (f"Option A for {topic_key}", f"Option B for {topic_key}"))
 
 class Runner:
     """Experiment runner for opinion dynamics research."""
@@ -104,12 +116,10 @@ class Runner:
         self.results = {}
         self.output_dir = config.get("output_dir", "results")
         
-        # Initialize LLM client if needed
         self.llm_client = None
         llm_config = config.get("llm", {})
         if llm_config.get("enabled", False):
             model_name = llm_config.get("model", "gpt-5-mini")
-            # For GPT-5 models, let the LLM client handle max_tokens internally
             max_tokens = llm_config.get("max_tokens", 150) if "gpt-5" not in model_name.lower() else 150
             self.llm_client = LLMClient(
                 model_name=model_name,
@@ -122,7 +132,7 @@ class Runner:
     def run_experiment(self, network_type: str, topic: str = None, 
                       n_agents: int = 50, max_steps: int = 100, model: str = "degroot",
                       progress_callback: Optional[Callable[[int, int], None]] = None,
-                      pure_math: bool = False) -> Dict[str, Any]:
+                      pure_math: bool = False, checkpoint_interval: int = 10) -> Dict[str, Any]:
         """Run a single experiment"""
         try:
             logger.info(f"Running experiment: {network_type} with {n_agents} agents")
@@ -149,9 +159,31 @@ class Runner:
         opinions = initialize_opinions_normal(actual_n_agents, random_seed=self.config.get("random_seed", 42))
         opinion_history = [opinions.copy()]
         
-        # If pure math mode, run mathematical convergence only
+        # If pure math mode, use Controller for detailed agent state tracking
         if pure_math:
-            return _run_pure_math_convergence(network_type, model, adjacency, opinions, max_steps)
+            controller = Controller(
+                llm_client=None,
+                n_agents=actual_n_agents,
+                epsilon=1e-6,
+                num_timesteps=max_steps,
+                topics=None,
+                random_seed=self.config.get("random_seed", 42),
+                llm_enabled=False,
+                model=model,
+                progress_callback=progress_callback,
+                checkpoint_interval=checkpoint_interval
+            )
+            controller.network.adjacency_matrix = adjacency
+            # Set initial opinions
+            for i, agent in enumerate(controller.agents):
+                agent.update_opinion(opinions[i])
+            results = controller.run_simulation(progress_bar=True)
+            
+            # Update the topology in the results metadata
+            if "experiment_metadata" in results:
+                results["experiment_metadata"]["topology"] = network_type
+            
+            return results
         
         # Load convergence steps
         config_convergence_steps = self.config.get("convergence_steps", {})
@@ -172,10 +204,11 @@ class Runner:
                 topics=[topic],  # Pass the string topic key, not the tuple framing
                 random_seed=self.config.get("random_seed", 42),
                 llm_enabled=True,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                checkpoint_interval=checkpoint_interval
             )
             controller.network.adjacency_matrix = adjacency
-            results = controller.run_simulation(progress_bar=False)
+            results = controller.run_simulation(progress_bar=True)
             
             # Update the topology in the results metadata
             if "experiment_metadata" in results:
@@ -193,10 +226,11 @@ class Runner:
                 random_seed=self.config.get("random_seed", 42),
                 llm_enabled=False,
                 model=model,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                checkpoint_interval=checkpoint_interval
             )
             controller.network.adjacency_matrix = adjacency
-            results = controller.run_simulation(progress_bar=False)
+            results = controller.run_simulation(progress_bar=True)
             
             logger.info(f"Mathematical simulation results keys: {list(results.keys()) if results else 'None'}")
             
@@ -207,7 +241,8 @@ class Runner:
             return results
     
     def run_batch(self, network_types: List[str], topics: List[str] = None, 
-                  n_agents: int = 50, max_steps: int = 100, models: List[str] = None) -> Dict[str, Any]:
+                  n_agents: int = 50, max_steps: int = 100, models: List[str] = None,
+                  checkpoint_interval: int = 10) -> Dict[str, Any]:
         """Run a batch of experiments with hierarchical progress tracking"""
         if models is None:
             models = ["degroot"]
@@ -224,114 +259,69 @@ class Runner:
         # New nested structure: model -> topology -> topic
         results = {}
         
-        # Create main experiment progress bar
-        with tqdm(total=total_experiments, desc="🧪 Overall Experiments", unit="exp", position=0, leave=True) as main_pbar:
-            for model_idx, model in enumerate(models):
+        # No experiment-level progress bar - just run experiments
+        for model in models:
                 results[model] = {}
-                
-                # Create model-level progress bar
-                model_total = len(network_types) * (len(topics) if topics else 1)
-                with tqdm(total=model_total, desc=f"🤖 {model.upper()}", unit="exp", position=1, leave=False) as model_pbar:
-                    for network_type in network_types:
-                        results[model][network_type] = {}
-                        
-                        if topics:
-                            # Create topic-level progress bar for this model+topology combination
-                            with tqdm(total=len(topics), desc=f"📊 {network_type}", unit="topic", position=2, leave=False) as topic_pbar:
-                                for topic in topics:
-                                    try:
-                                        # Get convergence steps for this specific combination
-                                        topology_max_steps = _load_convergence_steps(network_type, model, config_convergence_steps, max_steps)
-                                        
-                                        # Create timestep progress callback for this specific experiment
-                                        def create_timestep_callback(topic_name, network_name, model_name):
-                                            def timestep_callback(completed, total):
-                                                topic_pbar.set_postfix(
-                                                    step=f"{completed}/{total}",
-                                                    status="🔄 Running..."
-                                                )
-                                            return timestep_callback
-                                        
-                                        timestep_callback = create_timestep_callback(topic, network_type, model)
-                                        
-                                        # Run the experiment
-                                        result = self.run_experiment(
-                                            network_type, topic, n_agents, topology_max_steps, 
-                                            model, timestep_callback, pure_math=not llm_enabled
-                                        )
-                                        
-                                        # Store results
-                                        if "results" in result and topic in result["results"]:
-                                            results[model][network_type][topic] = result["results"][topic]
-                                        else:
-                                            results[model][network_type][topic] = result
-                                        
-                                        # Update progress bars
-                                        topic_pbar.set_postfix(status="✅ Complete")
-                                        topic_pbar.update(1)
-                                        model_pbar.update(1)
-                                        main_pbar.update(1)
-                                        
-                                        tqdm.write(f"  ✅ {model} + {network_type} + {topic} completed")
-                                        
-                                    except Exception as e:
-                                        tqdm.write(f"  ❌ {model} + {network_type} + {topic} failed: {e}")
-                                        results[model][network_type][topic] = {"error": str(e)}
-                                        
-                                        # Update progress bars even on failure
-                                        topic_pbar.set_postfix(status="❌ Failed")
-                                        topic_pbar.update(1)
-                                        model_pbar.update(1)
-                                        main_pbar.update(1)
-                        else:
-                            # Mathematical experiment (no topics)
+                for network_type in network_types:
+                    results[model][network_type] = {}
+                    
+                    if topics:
+                        for topic in topics:
                             try:
                                 topology_max_steps = _load_convergence_steps(network_type, model, config_convergence_steps, max_steps)
                                 
-                                # Create timestep progress callback for mathematical experiment
-                                def create_math_callback(network_name, model_name):
-                                    def math_callback(completed, total):
-                                        model_pbar.set_postfix(
-                                            step=f"{completed}/{total}",
-                                            status="🧮 Math processing..."
-                                        )
-                                    return math_callback
-                                
-                                math_callback = create_math_callback(network_type, model)
-                                
+                                # No progress callback - let individual experiments handle their own progress
                                 result = self.run_experiment(
-                                    network_type, None, n_agents, topology_max_steps, 
-                                    model, math_callback, pure_math=True
+                                    network_type, topic, n_agents, topology_max_steps, 
+                                    model, None, pure_math=not llm_enabled, checkpoint_interval=checkpoint_interval
                                 )
                                 
-                                results[model][network_type]["pure_math_model"] = result
-                                model_pbar.set_postfix(status="✅ Complete")
-                                model_pbar.update(1)
-                                main_pbar.update(1)
+                                # Store results
+                                if "results" in result and topic in result["results"]:
+                                    results[model][network_type][topic] = result["results"][topic]
+                                else:
+                                    results[model][network_type][topic] = result
                                 
-                                tqdm.write(f"  ✅ {model} + {network_type} (mathematical) completed")
+                                tqdm.write(f"✅ {model} + {network_type} + {topic} completed")
                                 
                             except Exception as e:
-                                tqdm.write(f"  ❌ {model} + {network_type} (mathematical) failed: {e}")
-                                results[model][network_type]["pure_math_model"] = {"error": str(e)}
-                                model_pbar.set_postfix(status="❌ Failed")
-                                model_pbar.update(1)
-                                main_pbar.update(1)
+                                results[model][network_type][topic] = {"error": str(e)}
+                                tqdm.write(f"❌ {model} + {network_type} + {topic} failed: {e}")
+                    else:
+                        # Mathematical experiment
+                        try:
+                            topology_max_steps = _load_convergence_steps(network_type, model, config_convergence_steps, max_steps)
+                            
+                            # No progress callback - let individual experiments handle their own progress
+                            result = self.run_experiment(
+                                network_type, None, n_agents, topology_max_steps, 
+                                model, None, pure_math=True, checkpoint_interval=checkpoint_interval
+                            )
+                            
+                            results[model][network_type]["pure_math_model"] = result
+                            tqdm.write(f"✅ {model} + {network_type} (mathematical) completed")
+                            
+                        except Exception as e:
+                            results[model][network_type]["pure_math_model"] = {"error": str(e)}
+                            tqdm.write(f"❌ {model} + {network_type} (mathematical) failed: {e}")
         
         tqdm.write("🎉 All experiments completed!")
         return results
     
     def save_results(self, results: Dict[str, Any], filename: str = None):
-        """Save results with simplified directory structure"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        """Save results with organized directory structure and simple naming"""
+        timestamp = datetime.now().strftime("%m-%d-%H-%M")
         
-        # Simplified directory structure
         if filename is None:
-            experiment_dir = f"experiment_{timestamp}"
+            # Use experiment name from config, fallback to simple name
+            experiment_name = self.config.get("experiment", {}).get("name", "experiment")
+            # Clean the name for filesystem use
+            experiment_name = experiment_name.lower().replace(" ", "_").replace("-", "_")
+            experiment_dir = f"{experiment_name}_{timestamp}"
         else:
             experiment_dir = f"{filename}_{timestamp}"
         
-        # Create main experiment directory
+        # Create organized directory structure
         experiment_path = os.path.join(self.output_dir, experiment_dir)
         os.makedirs(experiment_path, exist_ok=True)
         
@@ -363,6 +353,7 @@ class Runner:
                             elif isinstance(topic_data, dict) and 'timesteps' in topic_data:
                                 # This is the old flat structure - handle it directly
                                 # For pure math experiments, use "pure_math_model" as topic
+                                is_pure_math = not self.config.get("llm", {}).get("enabled", True)
                                 if is_pure_math:
                                     topic_name = "pure_math_model"
                                 else:
@@ -389,6 +380,7 @@ class Runner:
         metadata = {
             "experiment_timestamp": timestamp,
             "experiment_directory": experiment_dir,
+            "experiment_type": "pure_math" if not self.config.get("llm", {}).get("enabled", True) else "llm_based",
             "models": list(results.keys()),
             "topologies": list(set(topology for model_data in results.values() 
                                  if isinstance(model_data, dict)
@@ -402,7 +394,8 @@ class Runner:
                                   if isinstance(model_data, dict)
                                   for topology_data in model_data.values()
                                   if isinstance(topology_data, dict)
-                                  for topic in topology_data.keys()))
+                                  for topic in topology_data.keys())),
+            "naming_convention": "model_topic_topology_MM-DD-HH-MM"
         }
         
         metadata_filepath = os.path.join(experiment_path, "experiment_metadata.json")
@@ -420,24 +413,14 @@ class Runner:
         """Convert numpy types to Python types for JSON serialization"""
         if isinstance(obj, dict):
             return {key: self._make_json_serializable(value) for key, value in obj.items()}
-        elif isinstance(obj, list):
+        elif isinstance(obj, (list, tuple)):
             return [self._make_json_serializable(item) for item in obj]
-        elif isinstance(obj, tuple):
-            return [self._make_json_serializable(item) for item in obj]
-        elif isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
         elif hasattr(obj, 'item'):  # Handle numpy scalars
             return obj.item()
-        elif str(type(obj)) in ["<class 'numpy.int64'>", "<class 'numpy.int32'>", "<class 'numpy.int16'>", "<class 'numpy.int8'>"]:
-            return int(obj)
-        elif str(type(obj)) in ["<class 'numpy.float64'>", "<class 'numpy.float32'>", "<class 'numpy.float16'>"]:
-            return float(obj)
-        elif str(type(obj)) in ["<class 'numpy.bool_'>", "<class 'numpy.bool8'>"]:
-            return bool(obj)
+        elif isinstance(obj, (np.integer, np.floating, np.bool_)):
+            return obj.item()
         else:
             return obj
     
@@ -490,7 +473,7 @@ class Runner:
             
             # For pure math experiments, we need to modify the config to include topics
             vis_config = self.config.copy()
-            is_pure_math = not self.llm_client or not self.config.get("llm", {}).get("enabled", True)
+            is_pure_math = not self.config.get("llm", {}).get("enabled", True)
             if is_pure_math and not vis_config.get("topics"):
                 # Extract topics from the flattened results
                 topics = set()
@@ -516,6 +499,7 @@ def run_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
     network_types = config.get("topologies", ["smallworld", "scalefree", "random", "echo", "karate"])
     topics = config.get("topics", [])
     n_agents = config.get("n_agents", 50)
+    checkpoint_interval = config.get("checkpoint_interval", 10)
     
     # Convergence steps are now loaded from convergence_data.json per topology
     
@@ -527,41 +511,12 @@ def run_experiment(config: Dict[str, Any]) -> Dict[str, Any]:
     
     # Run experiments
     if topics:
-        results = runner.run_batch(network_types, topics, n_agents, default_max_steps, models)
+        results = runner.run_batch(network_types, topics, n_agents, default_max_steps, models, checkpoint_interval)
     else:
-        results = runner.run_batch(network_types, None, n_agents, default_max_steps, models)
+        results = runner.run_batch(network_types, None, n_agents, default_max_steps, models, checkpoint_interval)
     
     # Save results and return both results and path
     experiment_path = runner.save_results(results)
     
     return results, experiment_path
 
-def _run_pure_math_convergence(network_type: str, model: str, adjacency: np.ndarray, 
-                             initial_opinions: np.ndarray, max_steps: int) -> Dict[str, Any]:
-    """Run pure mathematical convergence without LLM."""
-    opinions = initial_opinions.copy()
-    opinion_history = [opinions.copy()]
-    
-    for step in range(max_steps):
-        if model == "degroot":
-            opinions = update_opinions_pure_degroot(opinions, adjacency)
-        elif model == "friedkin_johnsen":
-            lambda_values = np.full(len(opinions), 0.1)
-            opinions = update_opinions_friedkin_johnsen(opinions, adjacency, lambda_values, initial_opinions)
-        
-        opinion_history.append(opinions.copy())
-        
-        if check_convergence(opinions, opinion_history[-2], threshold=1e-10):
-            break
-    
-    return {
-        "network_type": network_type,
-        "model": model,
-        "converged": check_convergence(opinions, opinion_history[-2], threshold=1e-10),
-        "steps": len(opinion_history) - 1,
-        "final_opinions": opinions.tolist(),
-        "final_mean": float(np.mean(opinions)),
-        "final_std": float(np.std(opinions)),
-        "final_variance": float(np.var(opinions)),
-        "opinion_history": [op.tolist() for op in opinion_history]
-    }

@@ -28,26 +28,45 @@ class Agent:
             np.random.seed(random_seed + agent_id)
         self.current_opinion = np.clip(np.random.normal(0.0, 0.3), -1.0, 1.0)
     
-    def generate_post_prompt(self, topic) -> str:
+    def generate_post_prompt(self, topic, neighbor_posts: Optional[List[str]] = None) -> str:
         """
         Generate agent-specific prompt for post generation.
         
         Args:
             topic: Tuple of (a, b) to generate post about
+            neighbor_posts: List of posts from connected neighbors
             
         Returns:
             Agent-specific prompt
         """
         a, b = str(topic[0]).strip(), str(topic[1]).strip()
         
-        return f"""
-Write a short, social-media style post (1-3 sentences, <320 characters) in first person
-about {a} vs {b}. Your current opinion: {self.current_opinion:.3f} (-1=agrees with {a}, 1=agrees with {b}).
+        # Build the base prompt
+        prompt = f"""Write a short, social-media style post (1-3 sentences, <320 characters) in first person
+about {a} vs {b}. Your current opinion: {self.current_opinion:.3f} (-1=agrees with {a}, 1=agrees with {b})."""
+
+        # Add neighbor posts if available
+        if neighbor_posts and len(neighbor_posts) > 0:
+            prompt += f"""
+
+Here are posts from your connected neighbors that you can respond to:
+"""
+            for i, post in enumerate(neighbor_posts[:5]):  # Limit to 5 posts to avoid token limits
+                prompt += f"{post}\n"
+            
+            prompt += """
+You may respond to 1-2 of them by name (e.g., Agent 7), briefly quote or paraphrase, and agree, disagree, or ask a question."""
+        else:
+            prompt += """
 If you see other agents' posts, you may respond to 1-2 of them by name (e.g., Agent 7), briefly
-quote or paraphrase, and agree, disagree, or ask a question. Prose only, no numeric score.
+quote or paraphrase, and agree, disagree, or ask a question."""
+
+        prompt += """ Prose only, no numeric score.
 
 IMPORTANT: You must generate actual text content. Do not just reason about it - write the actual post.
 """
+        
+        return prompt
 
     def update_opinion(self, new_opinion: float):
         """
