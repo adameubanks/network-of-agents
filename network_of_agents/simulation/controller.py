@@ -7,11 +7,12 @@ from typing import List, Dict, Any, Optional, Callable, Tuple
 from tqdm import tqdm
 import time
 import logging
+import concurrent.futures as cf
 
 from ..agent import Agent
 from ..llm_client import LLMClient
 from ..network.graph_model import NetworkModel
-from ..core.mathematics import update_opinions_pure_degroot, create_connected_degroot_network
+from ..core.mathematics import update_opinions_pure_degroot, update_opinions_friedkin_johnsen, create_connected_degroot_network
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,9 @@ class Controller:
                  topics: Optional[List[str]] = None,
                  random_seed: Optional[int] = None,
                  llm_enabled: bool = True,
+                 model: str = "degroot",
                  on_timestep: Optional[Callable[[Dict[str, Any], int], None]] = None,
+                 progress_callback: Optional[Callable[[int, int], None]] = None,
                  resume_data: Optional[Dict[str, Any]] = None):
         """
         Initialize simulation controller.
@@ -48,9 +51,11 @@ class Controller:
         self.llm_client = llm_client
         self.topics = topics
         self.random_seed = random_seed
+        self.model = model
 
         self.llm_enabled = llm_enabled
         self.on_timestep = on_timestep
+        self.progress_callback = progress_callback
 
         # DeGroot-only configuration
         self.epsilon = float(epsilon)
@@ -72,6 +77,9 @@ class Controller:
         # Initialize components
         self.network = NetworkModel(n_agents, random_seed)
         self.agents = self._initialize_agents()
+        
+        # Store initial opinions for Friedkin-Johnsen model
+        self.initial_opinions = np.array([agent.get_opinion() for agent in self.agents])
         
         # No susceptibility matrix in DeGroot-only mode
         self.susceptibility_matrix = None
@@ -217,12 +225,27 @@ class Controller:
             else:
                 self._store_current_state(None, None, None)
         
-        # Main simulation loop
-        iterator = tqdm(range(start_timestep, self.num_timesteps), desc="Running simulation") if progress_bar else range(start_timestep, self.num_timesteps)
+        # Main simulation loop with enhanced progress tracking
+        if progress_bar:
+            topic_name = self.topics[0] if self.topics else "mathematical"
+            iterator = tqdm(range(start_timestep, self.num_timesteps), 
+                          desc=f"🔄 {topic_name} ({self.n_agents} agents)", 
+                          unit="step", 
+                          position=3,  # Position 3 for individual timestep progress
+                          leave=False)  # Don't keep visible to avoid clutter
+        else:
+            iterator = range(start_timestep, self.num_timesteps)
         
         for timestep in iterator:
             timestep_start_time = time.time()
             self.current_timestep = timestep
+            
+            # Update progress bar with current status
+            if progress_bar and self.llm_enabled:
+                iterator.set_postfix(
+                    step=f"{timestep + 1}/{self.num_timesteps}",
+                    status="🤖 LLM processing..."
+                )
             
             # Step 1: Get current network state
             X_current = self._get_opinion_matrix()
@@ -230,7 +253,14 @@ class Controller:
             A_prev = self.network.network_history[-1] if self.network.network_history else A_current
             
             # Step 2: Generate posts and interpretations (LLM) or skip (no-LLM)
-            current_topic = self.topics[0]  # Use single topic for entire simulation (string or [A,B])
+            # Get the topic key and convert to proper framing for LLM calls
+            topic_key = self.topics[0] if self.topics else None
+            if topic_key:
+                # Import the topic mapping to get proper framing
+                from ..runner import get_topic_framing
+                current_topic = get_topic_framing(topic_key)
+            else:
+                current_topic = None
             
             # Capture opinions before any updates (used for post generation)
             pre_update_opinions = self._get_opinion_matrix()
@@ -308,14 +338,28 @@ class Controller:
                 X_interpreted = X_current.copy()
 
             X_for_math = self._to_math_domain(X_interpreted)
-            X_next_math = update_opinions_pure_degroot(X_for_math, A_current, self.epsilon)
-            # Network remains unchanged in pure DeGroot model
+            
+            # Use the specified model for opinion updates
+            if self.model == "degroot":
+                X_next_math = update_opinions_pure_degroot(X_for_math, A_current, self.epsilon)
+            elif self.model == "friedkin_johnsen":
+                # For Friedkin-Johnsen, we need initial opinions and lambda values
+                # Using default lambda=0.1 for all agents (moderate stubbornness)
+                lambda_values = np.full(self.n_agents, 0.1)
+                X_0_math = self._to_math_domain(self.initial_opinions)
+                X_next_math = update_opinions_friedkin_johnsen(X_for_math, A_current, lambda_values, X_0_math, self.epsilon)
+            else:
+                raise ValueError(f"Unknown model: {self.model}")
+                
+            # Network remains unchanged in pure models
             X_next_agent = self._to_agent_domain(X_next_math)
             self._update_agent_opinions(X_next_agent)
             
             # Store LLM opinions for comparison
             if self.llm_enabled:
                 self.llm_opinion_history.append(X_interpreted.copy())
+            
+            # No early convergence check - run for full specified timesteps
 
             # Step 6: Store current state
             if self.llm_enabled:
@@ -324,7 +368,20 @@ class Controller:
                 self._store_current_state(None, None, None)
             
             # Record timing
-            _ = time.time() - timestep_start_time
+            timestep_time = time.time() - timestep_start_time
+
+            # Update progress bar with completion status
+            if progress_bar:
+                mean_opinion = self.mean_opinions[-1] if self.mean_opinions else 0.0
+                iterator.set_postfix(
+                    step=f"{timestep + 1}/{self.num_timesteps}",
+                    mean=f"{mean_opinion:.3f}",
+                    time=f"{timestep_time:.1f}s"
+                )
+            
+            # Call progress callback if provided (this updates the higher-level progress bars)
+            if self.progress_callback:
+                self.progress_callback(timestep + 1, self.num_timesteps)
 
             # Invoke per-timestep callback with partial results snapshot
             if self.on_timestep is not None:
@@ -392,7 +449,7 @@ class Controller:
         for i, agent in enumerate(self.agents):
             agent.update_opinion(new_opinions[i])
     
-    def _store_current_state(self, posts: Optional[List[str]], interpretations: Optional[List[float]], individual_ratings: Optional[List[List[tuple[int, float]]]], pre_update_opinions: Optional[np.ndarray] = None):
+    def _store_current_state(self, posts: Optional[List[str]], neighbor_opinions: Optional[List[float]], individual_ratings: Optional[List[List[tuple[int, float]]]], pre_update_opinions: Optional[np.ndarray] = None):
         """Store current simulation state."""
         opinions = self._get_opinion_matrix()
         self.opinion_history.append(opinions.copy())
@@ -405,16 +462,16 @@ class Controller:
         self.std_opinions.append(std_opinion)
         
         # Store LLM data if available (posts are already stored in main loop)
-        if self.llm_enabled and posts is not None and interpretations is not None and individual_ratings is not None:
-            self.interpretations_history.append(interpretations.copy())
+        if self.llm_enabled and posts is not None and neighbor_opinions is not None and individual_ratings is not None:
+            self.interpretations_history.append(neighbor_opinions.copy())
             self.individual_ratings_history.append(individual_ratings.copy())
             if pre_update_opinions is not None:
                 self.pre_update_opinions_history.append(pre_update_opinions.copy())
-            self._store_detailed_agent_state(posts, interpretations, individual_ratings, pre_update_opinions)
+            self._store_detailed_agent_state(posts, neighbor_opinions, individual_ratings, pre_update_opinions)
         else:
             self._store_basic_agent_state()
     
-    def _store_detailed_agent_state(self, posts: List[str], interpretations: List[float], individual_ratings: List[List[tuple[int, float]]], pre_update_opinions: np.ndarray = None):
+    def _store_detailed_agent_state(self, posts: List[str], neighbor_opinions: List[float], individual_ratings: List[List[tuple[int, float]]], pre_update_opinions: np.ndarray = None):
         """Store detailed information about each agent at current timestep."""
         current_adjacency = self.network.get_adjacency_matrix()
         current_opinions = pre_update_opinions if pre_update_opinions is not None else self._get_opinion_matrix()
@@ -423,8 +480,8 @@ class Controller:
         # Ensure lists have correct length to avoid index errors
         if len(posts) != self.n_agents:
             posts = [f"Agent {i}: (no post available)" for i in range(self.n_agents)]
-        if len(interpretations) != self.n_agents:
-            interpretations = [float(self.agents[i].get_opinion()) for i in range(self.n_agents)]
+        if len(neighbor_opinions) != self.n_agents:
+            neighbor_opinions = [float(self.agents[i].get_opinion()) for i in range(self.n_agents)]
         if len(individual_ratings) != self.n_agents:
             individual_ratings = [[] for _ in range(self.n_agents)]
         
@@ -456,7 +513,7 @@ class Controller:
         for i, agent in enumerate(self.agents):
             # Get agent data
             agent_post = posts[i]
-            agent_interpretation = interpretations[i]
+            agent_interpretation = neighbor_opinions[i]
             
             # Format ratings received by this agent (who rated them and what they rated)
             ratings_received = []
@@ -522,37 +579,97 @@ class Controller:
     
     def _get_simulation_results(self) -> Dict[str, Any]:
         """
-        Get simulation results.
+        Get simulation results in the new nested structure.
         
         Returns:
-            Dictionary containing simulation results
+            Dictionary containing simulation results nested by model -> topic -> timestep -> agent interactions
         """
-        results: Dict[str, Any] = {
-            'opinion_history': [op.tolist() for op in self.opinion_history],
-            'mean_opinions': self.mean_opinions,
-            'std_opinions': self.std_opinions,
-            'final_opinions': self._get_opinion_matrix().tolist(),
-            'simulation_params': {
-            'n_agents': self.n_agents,
-            'num_timesteps': self.num_timesteps,
-            'llm_enabled': self.llm_enabled,
-            },
-            'random_seed': self.random_seed,
-            'topics': self.topics
-        }
-        # Always include timesteps for both LLM and non-LLM simulations
-        results['timesteps'] = self.timesteps
+        # Get the current topic (assuming single topic per simulation)
+        if self.topics and len(self.topics) > 0:
+            current_topic = self.topics[0]
+        elif not self.llm_enabled:
+            current_topic = "pure_math_model"
+        else:
+            current_topic = "unknown"
         
+        # Restructure timesteps data into the new nested format
+        timesteps_nested = {}
+        for timestep_data in self.timesteps:
+            timestep_num = timestep_data['timestep']
+            timesteps_nested[str(timestep_num)] = {
+                'agents': {}
+            }
+            
+            # Convert agent list to nested agent dict
+            for agent_data in timestep_data['agents']:
+                agent_id = str(agent_data['agent_id'])
+                
+                # Build interpretations_received dict from ratings_received
+                interpretations_received = {}
+                for rating_data in agent_data.get('ratings_received', []):
+                    rater_id = str(rating_data['rater_agent'])
+                    interpretations_received[rater_id] = rating_data['rating']
+                
+                # Get connected agent IDs from adjacency matrix
+                current_adjacency = self.network.get_adjacency_matrix()
+                connected_agents = [str(j) for j in range(self.n_agents) if current_adjacency[int(agent_id), j] == 1]
+                
+                # Handle both LLM and non-LLM agent data structures
+                opinion_key = 'opinion' if 'opinion' in agent_data else 'actual_opinion'
+                
+                timesteps_nested[str(timestep_num)]['agents'][agent_id] = {
+                    'opinion': agent_data[opinion_key],
+                    'post': agent_data['post'],
+                    'connected_to': connected_agents,
+                    'interpretations_received': interpretations_received
+                }
+        
+        # Build the new nested structure
+        results = {
+            'experiment_metadata': {
+                'model': self.model,
+                'topology': 'unknown',  # Will be set by runner
+                'n_agents': self.n_agents,
+                'num_timesteps': self.num_timesteps,
+                'llm_enabled': self.llm_enabled,
+                'random_seed': self.random_seed,
+                'topics': self.topics,
+                'convergence_metrics': {
+                    'final_mean_opinion': self.mean_opinions[-1] if self.mean_opinions else 0.0,
+                    'final_std_opinion': self.std_opinions[-1] if self.std_opinions else 0.0,
+                    'converged': len(self.mean_opinions) < self.num_timesteps
+                }
+            },
+            'results': {
+                current_topic: {
+                    'timesteps': timesteps_nested,
+                    'summary_metrics': {
+                        'opinion_history': [op.tolist() for op in self.opinion_history],
+                        'mean_opinions': self.mean_opinions,
+                        'std_opinions': self.std_opinions,
+                        'final_opinions': self._get_opinion_matrix().tolist(),
+                        'network_info': {
+                            'adjacency_matrix': self.network.get_adjacency_matrix().tolist(),
+                            'n_agents': self.n_agents
+                        }
+                    }
+                }
+            }
+        }
+        
+        # Add LLM-specific data if enabled
         if self.llm_enabled:
-            results['posts_history'] = self.posts_history
-            results['interpretations_history'] = self.interpretations_history
-            results['individual_ratings'] = self.individual_ratings_history
-            results['neighbor_opinions'] = self.neighbor_opinions_history
-            results['pre_update_opinions'] = [op.tolist() for op in self.pre_update_opinions_history]
+            results['results'][current_topic]['llm_analysis'] = {
+                'posts_history': self.posts_history,
+                'interpretations_history': self.interpretations_history,
+                'individual_ratings': self.individual_ratings_history,
+                'neighbor_opinions': self.neighbor_opinions_history,
+                'pre_update_opinions': [op.tolist() for op in self.pre_update_opinions_history]
+            }
             
             # Add LLM vs Pure DeGroot comparison metrics
             if len(self.llm_opinion_history) > 0:
-                results['llm_vs_pure_degroot'] = {
+                results['results'][current_topic]['llm_vs_pure_degroot'] = {
                     'llm_opinion_history': [op.tolist() for op in self.llm_opinion_history],
                     'pure_degroot_opinion_history': [op.tolist() for op in self.pure_degroot_opinion_history],
                     'final_divergence': self._calculate_llm_degroot_divergence(
@@ -561,6 +678,7 @@ class Controller:
                     ) if len(self.llm_opinion_history) > 0 else {},
                     'timestep_divergence': self._calculate_timestep_divergence()
                 }
+        
         return results
     
     def get_current_state(self) -> Dict[str, Any]:

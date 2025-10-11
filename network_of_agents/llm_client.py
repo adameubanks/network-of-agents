@@ -12,15 +12,21 @@ import logging
 import re
 
 load_dotenv()
-logger = logging.getLogger(__name__)
+
+# Suppress verbose logging
+os.environ["LITELLM_LOG"] = "ERROR"
+logging.basicConfig(level=logging.WARNING, force=True)
+for logger_name in ["litellm", "httpx", "openai", "urllib3", "requests"]:
+    logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
 class LLMClient:
     """Client for generating and rating posts."""
     
     # Supported models
-    SUPPORTED_MODELS = ["gpt-5-nano", "gpt-5-mini", "grok-mini"]
+    SUPPORTED_MODELS = ["gpt-5-nano", "gpt-5-mini", "gpt-5", "gpt-5-pro", "gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo", "gpt-4-turbo"]
     
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gpt-5-mini"):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gpt-4o-mini", 
+                 max_workers: int = 100, timeout: int = 15, max_tokens: int = 150):
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
             raise ValueError("No API key provided or found in environment")
@@ -28,71 +34,96 @@ class LLMClient:
         if model_name not in self.SUPPORTED_MODELS:
             raise ValueError(f"Unsupported model: {model_name}. Supported models: {self.SUPPORTED_MODELS}")
         
-        # Reduce LiteLLM logging verbosity
+        # Configure LiteLLM
         litellm.set_verbose = False
-        litellm.drop_params = True
-        litellm.suppress_debug_info = True
-        
-        # Set logging levels to reduce verbosity
-        logging.getLogger("litellm").setLevel(logging.WARNING)
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-        logging.getLogger("openai").setLevel(logging.WARNING)
-        
         os.environ["OPENAI_API_KEY"] = self.api_key
         
         self.model_name = model_name
-        self.max_workers = 5
+        self.max_workers = max_workers
+        self.timeout = timeout
+        self.max_tokens = max_tokens
     
-    def _call_llm(self, prompt: str) -> str:
+    def _call_llm(self, prompt: str, max_retries: int = 2) -> str:
         """Make a single LLM call and return the response text"""
         try:
-            response = litellm.completion(
-                model=self.model_name,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return self._extract_text(response) or ""
+            # Adjust max_tokens for GPT-5 models to ensure text output
+            max_tokens = self.max_tokens
+            if "gpt-5" in self.model_name.lower():
+                max_tokens = min(4000, self.max_tokens * 4)  # Give much more room for reasoning + text
+            
+            # Configure parameters based on model type
+            completion_params = {
+                "model": self.model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens
+            }
+            
+            # GPT-5 models only support temperature=1 and benefit from minimal reasoning
+            if "gpt-5" in self.model_name.lower():
+                completion_params["temperature"] = 1.0
+                completion_params["reasoning_effort"] = "minimal"  # Reduce reasoning to get more text output
+            else:
+                completion_params["temperature"] = 0.7
+            
+            response = litellm.completion(**completion_params)
+            
+            
+            # Try different ways to extract content based on response structure
+            content = ""
+            if hasattr(response, 'choices') and response.choices:
+                choice = response.choices[0]
+                if hasattr(choice, 'message') and hasattr(choice.message, 'content'):
+                    content = choice.message.content or ""
+                elif hasattr(choice, 'text'):
+                    content = choice.text or ""
+                elif hasattr(choice, 'content'):
+                    content = choice.content or ""
+                else:
+                    # Try to get content directly from choice
+                    content = str(choice) if choice else ""
+            elif hasattr(response, 'content'):
+                content = response.content or ""
+            elif hasattr(response, 'text'):
+                content = response.text or ""
+            else:
+                # Last resort: convert response to string
+                content = str(response)
+            
+            # Throw error for empty responses instead of fallback
+            if not content or content.strip() == "":
+                choice = response.choices[0] if hasattr(response, 'choices') and response.choices else None
+                finish_reason = getattr(choice, 'finish_reason', 'N/A') if choice else 'N/A'
+                
+                raise ValueError(f"Empty response from {self.model_name}. Finish reason: {finish_reason}. Response: {response}")
+            
+            return content
         except Exception as e:
-            logger.warning(f"LLM call failed: {e}")
+            print(f"LLM call failed: {e}")
             return ""
     
-    def _extract_text(self, response) -> Optional[str]:
-        """Extract text from LLM response"""
-        try:
-            if hasattr(response, 'choices') and len(response.choices) > 0:
-                message = getattr(response.choices[0], 'message', None)
-                if message and hasattr(message, 'content'):
-                    return message.content
-        except Exception:
-            pass
-        return None
     
-    def generate_posts(self, topic: str, agents: List, neighbor_posts_per_agent: Optional[List[List[str]]] = None) -> List[str]:
+    def generate_posts(self, topic, agents: List, neighbor_posts_per_agent: Optional[List[List[str]]] = None) -> List[str]:
         """Generate posts for agents"""
+        print(f"Generating posts for {len(agents)} agents on topic: {topic}")
+        
         prompts = []
         for i, agent in enumerate(agents):
             p = agent.generate_post_prompt(topic)
-            if neighbor_posts_per_agent and i < len(neighbor_posts_per_agent) and neighbor_posts_per_agent[i]:
-                neighbors = neighbor_posts_per_agent[i][-6:]  # Limit to 6 neighbors
-                trimmed = []
-                for txt in neighbors:
-                    t = (txt or "").strip()
-                    if len(t) > 220:
-                        t = t[:219] + "…"
-                    trimmed.append(t)
-                combined = "\n".join(trimmed)
-                p = f"{p}\nHere are recent posts from connected agents:\n{combined}"
             prompts.append(p)
         
+        print(f"Generated {len(prompts)} prompts")
         responses = self._call_llm_batch(prompts)
         
-        # Prefix each generated post with agent ID
+        # Simple output formatting - throw error for empty responses
         out = []
         for i, r in enumerate(responses):
             agent_id = getattr(agents[i], 'agent_id', i)
             text = r.strip() if r and isinstance(r, str) else ""
             if not text:
-                text = f"No content for agent {agent_id} on {topic}"
+                raise ValueError(f"Empty response for agent {agent_id} on topic {topic}. Response: '{r}'")
             out.append(f"Agent {agent_id}: {text}")
+        
+        print(f"Generated {len(out)} posts")
         return out
     
     def _call_llm_batch(self, prompts: List[str]) -> List[str]:
@@ -106,14 +137,16 @@ class LLMClient:
             try:
                 results[i] = self._call_llm(p)
             except Exception as e:
-                logger.warning(f"LLM call {i} failed: {e}")
+                print(f"LLM call {i} failed: {e}")
                 results[i] = ""
         
+        # Use parallel processing but with reasonable limits
         workers = min(self.max_workers, max(1, len(prompts)))
+        
         with _f.ThreadPoolExecutor(max_workers=workers) as ex:
-            for i, p in enumerate(prompts):
-                ex.submit(_one, i, p)
-            ex.shutdown(wait=True)
+            futures = [ex.submit(_one, i, p) for i, p in enumerate(prompts)]
+            _f.wait(futures, timeout=300)
+        
         return results
     
     def _parse_opinion_response(self, response: str) -> float:
@@ -141,7 +174,6 @@ class LLMClient:
             opinion = float(numbers[-1])
             return max(-1.0, min(1.0, opinion))
         except ValueError:
-            logger.error(f"Could not parse number from response: '{response}'")
             raise ValueError(f"Could not parse number from response: '{response}'")
     
     def rate_posts_pairwise(self, posts: List[str], topic: str, agents: List, adjacency) -> tuple:

@@ -47,54 +47,5 @@ class NetworkModel:
         # Update current matrix
         self.adjacency_matrix = new_adjacency.copy()
     
-    def get_network_density(self) -> float:
-        """
-        Calculate the current network density.
-        
-        Returns:
-            Network density (number of edges / maximum possible edges)
-        """
-        total_edges = np.sum(self.adjacency_matrix) / 2  # Divide by 2 for undirected graph
-        max_possible_edges = self.n_agents * (self.n_agents - 1) / 2
-        return total_edges / max_possible_edges
     
-    def get_average_degree(self) -> float:
-        """
-        Calculate the average degree of nodes in the network.
-        
-        Returns:
-            Average degree
-        """
-        degrees = np.sum(self.adjacency_matrix, axis=1)
-        return np.mean(degrees)
     
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert network model to dictionary for serialization.
-        
-        Returns:
-            Dictionary representation of the network model
-        """
-        return {
-            'n_agents': self.n_agents,
-            'adjacency_matrix': self.adjacency_matrix.tolist(),
-            'network_history': [adj.tolist() for adj in self.network_history]
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'NetworkModel':
-        """
-        Create network model from dictionary.
-        
-        Args:
-            data: Dictionary representation of the network model
-            
-        Returns:
-            Network model instance
-        """
-        network = cls(
-            n_agents=data['n_agents']
-        )
-        network.adjacency_matrix = np.array(data['adjacency_matrix'])
-        network.network_history = [np.array(adj) for adj in data['network_history']]
-        return network 

@@ -196,12 +196,6 @@ def create_complete_graph(n_agents: int) -> np.ndarray:
 # OPINION INITIALIZATION
 # ============================================================================
 
-def initialize_opinions_uniform(n_agents: int, random_seed: Optional[int] = None) -> np.ndarray:
-    """Initialize opinions uniformly at random in [-1, 1]"""
-    if random_seed is not None:
-        np.random.seed(random_seed)
-    return np.random.uniform(-1, 1, n_agents)
-
 def initialize_opinions_normal(n_agents: int, mu: float = 0.0, sigma: float = 0.3, 
                               random_seed: Optional[int] = None) -> np.ndarray:
     """Initialize opinions using normal distribution, clipped to [-1, 1]"""
@@ -210,24 +204,15 @@ def initialize_opinions_normal(n_agents: int, mu: float = 0.0, sigma: float = 0.
     opinions = np.random.normal(mu, sigma, n_agents)
     return np.clip(opinions, -1, 1)
 
-def initialize_opinions_polarized(n_agents: int, cluster1_value: float, cluster2_value: float, 
-                                 random_seed: Optional[int] = None) -> np.ndarray:
-    """Initialize opinions in two distinct clusters"""
-    if random_seed is not None:
-        np.random.seed(random_seed)
-    cluster_assignments = np.random.choice([0, 1], size=n_agents)
-    return np.where(cluster_assignments == 0, cluster1_value, cluster2_value)
+# ============================================================================
+# EVALUATION METRICS
+# ============================================================================
 
-def initialize_opinions_bimodal(n_agents: int, mu1: float, mu2: float, sigma: float, 
-                               weight1: float = 0.5, random_seed: Optional[int] = None) -> np.ndarray:
-    """Initialize opinions using a bimodal distribution"""
-    if random_seed is not None:
-        np.random.seed(random_seed)
-    cluster_assignments = np.random.random(n_agents) < weight1
-    opinions = np.zeros(n_agents)
-    opinions[cluster_assignments] = np.random.normal(mu1, sigma, np.sum(cluster_assignments))
-    opinions[~cluster_assignments] = np.random.normal(mu2, sigma, np.sum(~cluster_assignments))
-    return np.clip(opinions, -1, 1)
+
+def check_convergence(X_current: np.ndarray, X_previous: np.ndarray, 
+                     threshold: float = 1e-6) -> bool:
+    """Check if opinions have converged based on L2 norm threshold"""
+    return np.linalg.norm(X_current - X_previous, ord=2) < threshold
 
 # ============================================================================
 # NETWORK ANALYSIS

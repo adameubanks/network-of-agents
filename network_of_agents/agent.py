@@ -22,8 +22,11 @@ class Agent:
         """
         self.agent_id = agent_id
         
-        # Initialize with random opinion
-        self.current_opinion = np.random.uniform(-1, 1)
+        # Initialize with normal distribution as per experimental design
+        # Normal distribution (μ=0.0, σ=0.3) clipped to [-1, 1]
+        if random_seed is not None:
+            np.random.seed(random_seed + agent_id)
+        self.current_opinion = np.clip(np.random.normal(0.0, 0.3), -1.0, 1.0)
     
     def generate_post_prompt(self, topic) -> str:
         """
@@ -42,6 +45,8 @@ Write a short, social-media style post (1-3 sentences, <320 characters) in first
 about {a} vs {b}. Your current opinion: {self.current_opinion:.3f} (-1=agrees with {a}, 1=agrees with {b}).
 If you see other agents' posts, you may respond to 1-2 of them by name (e.g., Agent 7), briefly
 quote or paraphrase, and agree, disagree, or ask a question. Prose only, no numeric score.
+
+IMPORTANT: You must generate actual text content. Do not just reason about it - write the actual post.
 """
 
     def update_opinion(self, new_opinion: float):
@@ -51,7 +56,8 @@ quote or paraphrase, and agree, disagree, or ask a question. Prose only, no nume
         Args:
             new_opinion: New opinion value (-1 to 1)
         """
-        self.current_opinion = new_opinion
+        # Enforce bounds to keep opinions in [-1, 1] range
+        self.current_opinion = np.clip(new_opinion, -1.0, 1.0)
     
     def get_opinion(self) -> float:
         """

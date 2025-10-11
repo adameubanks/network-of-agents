@@ -1,0 +1,42 @@
+{
+  "experiment": {
+    "name": "Pure Math Analysis",
+    "random_seed": 42
+  },
+  "topologies": [
+    "smallworld",
+    "scalefree", 
+    "random",
+    "echo",
+    "karate",
+    "stubborn"
+  ],
+  "models": [
+    "degroot",
+    "friedkin_johnsen"
+  ],
+  "topics": [
+    "Pure Math"
+  ],
+  "n_agents": 50,
+  "convergence_steps": {
+    "smallworld": 51,
+    "scalefree": 33,
+    "random": 25,
+    "echo": 26,
+    "karate": 66,
+    "stubborn": 51
+  },
+  "llm": {
+    "model": "gpt-5-nano",
+    "enabled": false,
+    "max_workers": 100,
+    "timeout": 15,
+    "max_tokens": 5000
+  },
+  "analysis": {
+    "create_visualizations": true,
+    "save_detailed_results": true,
+    "calculate_metrics": true
+  }
+}

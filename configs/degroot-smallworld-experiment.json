@@ -1,0 +1,31 @@
+{
+  "experiment": {
+    "name": "DeGroot Smallworld Convergence Test",
+    "random_seed": 42
+  },
+  "topologies": [
+    "smallworld"
+  ],
+  "models": [
+    "degroot"
+  ],
+  "topics": [
+    "immigration"
+  ],
+  "n_agents": 50,
+  "convergence_steps": {
+    "smallworld": 3
+  },
+  "llm": {
+    "model": "gpt-5-nano",
+    "enabled": true,
+    "max_workers": 100,
+    "timeout": 15,
+    "max_tokens": 5000
+  },
+  "analysis": {
+    "create_visualizations": true,
+    "save_detailed_results": true,
+    "calculate_metrics": true
+  }
+}
