@@ -22,7 +22,10 @@
     "human_cloning"
   ],
   "n_agents": 50,
+  "epsilon": 1e-6,
+  "connectivity": 0.05,
   "checkpoint_interval": 5,
+  "keep_checkpoints": true,
   "convergence_steps": {
     "smallworld": 31
   },
@@ -37,5 +40,6 @@
     "create_visualizations": true,
     "save_detailed_results": true,
     "calculate_metrics": true
-  }
+  },
+  "symmetry_testing": false
 }

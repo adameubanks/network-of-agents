@@ -25,14 +25,23 @@ class LLMClient:
     # Supported models
     SUPPORTED_MODELS = ["gpt-5-nano", "gpt-5-mini", "gpt-5", "gpt-5-pro", "gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo", "gpt-4-turbo"]
     
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gpt-4o-mini", 
-                 max_workers: int = 100, timeout: int = 15, max_tokens: int = 150):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = None, 
+                 max_workers: int = None, timeout: int = None, max_tokens: int = None):
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
             raise ValueError("No API key provided or found in environment")
         
+        if model_name is None:
+            raise ValueError("model_name must be provided")
         if model_name not in self.SUPPORTED_MODELS:
             raise ValueError(f"Unsupported model: {model_name}. Supported models: {self.SUPPORTED_MODELS}")
+        
+        if max_workers is None:
+            raise ValueError("max_workers must be provided")
+        if timeout is None:
+            raise ValueError("timeout must be provided")
+        if max_tokens is None:
+            raise ValueError("max_tokens must be provided")
         
         # Configure LiteLLM
         litellm.set_verbose = False

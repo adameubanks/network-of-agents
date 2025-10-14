@@ -29,29 +29,18 @@ class Agent:
         self.current_opinion = np.clip(np.random.normal(0.0, 0.3), -1.0, 1.0)
     
     def generate_post_prompt(self, topic, neighbor_posts: Optional[List[str]] = None) -> str:
-        """
-        Generate agent-specific prompt for post generation.
-        
-        Args:
-            topic: Tuple of (a, b) to generate post about
-            neighbor_posts: List of posts from connected neighbors
-            
-        Returns:
-            Agent-specific prompt
-        """
+        """Generate agent-specific prompt for post generation."""
         a, b = str(topic[0]).strip(), str(topic[1]).strip()
         
-        # Build the base prompt
         prompt = f"""Write a short, social-media style post (1-3 sentences, <320 characters) in first person
 about {a} vs {b}. Your current opinion: {self.current_opinion:.3f} (-1=agrees with {a}, 1=agrees with {b})."""
 
-        # Add neighbor posts if available
         if neighbor_posts and len(neighbor_posts) > 0:
             prompt += f"""
 
 Here are posts from your connected neighbors that you can respond to:
 """
-            for i, post in enumerate(neighbor_posts[:5]):  # Limit to 5 posts to avoid token limits
+            for i, post in enumerate(neighbor_posts[:5]):
                 prompt += f"{post}\n"
             
             prompt += """
@@ -88,24 +77,20 @@ IMPORTANT: You must generate actual text content. Do not just reason about it - 
         return self.current_opinion 
 
     def interpret_post_prompt(self, post: str, topic) -> str:
-        """
-        Generate agent-specific interpretation prompt for a single post.
-        
-        Args:
-            post: Single post to interpret
-            topic: Tuple of (a, b) the post is about
-            
-        Returns:
-            Agent-specific interpretation prompt
-        """
+        """Generate agent-specific interpretation prompt for a single post."""
         a, b = str(topic[0]).strip(), str(topic[1]).strip()
         
         return f"""
-Rate the post on the axis {a} (-1) ↔ {b} (1).
--1.000 = agrees with this statement: {a} over this statement: {b}
- 1.000 = agrees with this statement: {b} over this statement: {a}
+Analyze this post and determine where it falls on the opinion spectrum between "{a}" and "{b}".
+
+-1.000 = The post clearly supports/advocates for "{a}" over "{b}"
+ 0.000 = The post is neutral or balanced between "{a}" and "{b}"  
+ 1.000 = The post clearly supports/advocates for "{b}" over "{a}"
+
+Focus on the post's POSITION on the topic, not how well-written or agreeable it is.
 
 Post: "{post}"
+
 Respond with ONLY one number in [-1.000, 1.000] on its own line. Use 0.000 if neutral. Make sure to include at least two points of precision.
 """ 
 

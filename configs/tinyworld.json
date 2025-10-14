@@ -1,0 +1,39 @@
+{
+    "experiment": {
+      "name": "TestAllStuff",
+      "random_seed": 42
+    },
+    "topologies": [
+      "smallworld",
+      "echo"
+    ],
+    "models": [
+      "degroot"
+    ],
+    "topics": [
+      "immigration",
+      "environment_economy"
+    ],
+    "n_agents": 1,
+    "epsilon": 1e-6,
+    "connectivity": 0.05,
+    "checkpoint_interval": 5,
+    "keep_checkpoints": true,
+    "convergence_steps": {
+      "smallworld": 1,
+      "echo": 1
+    },
+    "llm": {
+      "model": "gpt-5-nano",
+      "enabled": true,
+      "max_workers": 100,
+      "timeout": 15,
+      "max_tokens": 5000
+    },
+    "analysis": {
+      "create_visualizations": true,
+      "save_detailed_results": true,
+      "calculate_metrics": true
+    },
+    "symmetry_testing": true
+  }

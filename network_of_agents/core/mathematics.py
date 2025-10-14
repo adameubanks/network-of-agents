@@ -52,19 +52,6 @@ def update_opinions_pure_degroot(X_k: np.ndarray, A_k: np.ndarray, epsilon: floa
     
     return np.dot(W, X_k)
 
-def update_opinions_friedkin_johnsen(X_k: np.ndarray, A_k: np.ndarray, lambda_values: np.ndarray, 
-                                   X_0: np.ndarray, epsilon: float = 1e-6) -> np.ndarray:
-    """Friedkin-Johnsen opinion update: X[k+1] = ΛX[0] + (I - Λ)WX[k]"""
-    n = A_k.shape[0]
-    row_sums = A_k.sum(axis=1, keepdims=True)
-    W = np.eye(n)
-    
-    connected_mask = row_sums.flatten() > 0
-    if np.any(connected_mask):
-        W[connected_mask] = A_k[connected_mask] / row_sums[connected_mask]
-    
-    Lambda = np.diag(lambda_values)
-    return np.dot(Lambda, X_0) + np.dot(np.eye(n) - Lambda, np.dot(W, X_k))
 
 def update_edges(A_k: np.ndarray, X_k: np.ndarray, theta: int, epsilon: float = 1e-6, 
                 update_probability: float = 1.0) -> np.ndarray:
