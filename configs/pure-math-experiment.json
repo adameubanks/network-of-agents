@@ -12,13 +12,14 @@
     "stubborn"
   ],
   "models": [
-    "degroot",
-    "friedkin_johnsen"
+    "degroot"
   ],
   "topics": [
-    "Pure Math"
+    "pure_math"
   ],
   "n_agents": 50,
+  "epsilon": 1e-6,
+  "connectivity": 0.05,
   "convergence_steps": {
     "smallworld": 51,
     "scalefree": 33,

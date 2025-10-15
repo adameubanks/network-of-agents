@@ -291,7 +291,7 @@ class Controller:
         """Get simulation results (simplified streaming approach)."""
         current_topic = self.topics[0] if self.topics else ("pure_math_model" if not self.llm_enabled else "unknown")
         
-        # Use streaming data directly
+        # Use streaming data directly - flatten structure for compatibility
         results = {
             'experiment_metadata': {
                 'model': self.model,
@@ -302,21 +302,15 @@ class Controller:
                 'random_seed': self.random_seed,
                 'topics': self.topics
             },
-            'results': {
-                current_topic: {
-                    'summary_metrics': {
-                        'opinion_history': self.opinion_history,
-                        'mean_opinions': self.mean_opinions,
-                        'std_opinions': self.std_opinions,
-                        'final_opinions': self.final_opinions,
-                        'posts_history': self.posts_history,
-                        'ratings_history': self.ratings_history,
-                        'network_info': {
-                            'adjacency_matrix': self.network.get_adjacency_matrix().tolist(),
-                            'n_agents': self.n_agents
-                        }
-                    }
-                }
+            'opinion_history': self.opinion_history,
+            'mean_opinions': self.mean_opinions,
+            'std_opinions': self.std_opinions,
+            'final_opinions': self.final_opinions,
+            'posts_history': self.posts_history,
+            'ratings_history': self.ratings_history,
+            'network_info': {
+                'adjacency_matrix': self.network.get_adjacency_matrix().tolist(),
+                'n_agents': self.n_agents
             }
         }
         

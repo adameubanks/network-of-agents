@@ -142,7 +142,7 @@ class Runner:
         # Get convergence steps
         max_steps = _get_convergence_steps(network_type, model, self.config)
         
-        # Create output file path for streaming
+        # Create experiment directory structure
         timestamp = datetime.now().strftime("%m-%d-%H-%M")
         experiment_name = self.config.get("experiment", {}).get("name", "experiment")
         experiment_name = experiment_name.lower().replace(" ", "_").replace("-", "_")
@@ -150,9 +150,13 @@ class Runner:
         experiment_path = os.path.join(self.output_dir, experiment_dir)
         os.makedirs(experiment_path, exist_ok=True)
         
-        # Create topic-specific output file
+        # Create plots directory
+        plots_path = os.path.join(experiment_path, "plots")
+        os.makedirs(plots_path, exist_ok=True)
+        
+        # Create topic-specific output file (temporary for streaming)
         topic_name = topic or "pure_math_model"
-        output_file = os.path.join(experiment_path, f"{model}_{network_type}_{topic_name}_streaming.json")
+        output_file = os.path.join(experiment_path, f"{topic_name}_streaming.json")
         
         # Create controller with streaming output
         controller = Controller(
@@ -176,6 +180,9 @@ class Runner:
         # Update topology in results
         if "experiment_metadata" in results:
             results["experiment_metadata"]["topology"] = network_type
+        
+        # Add streaming file path for later use
+        results["streaming_file"] = output_file
         
         return results
     
@@ -243,59 +250,93 @@ class Runner:
         return results
     
     def save_results(self, results: List[Dict[str, Any]]) -> str:
-        """Save results with organized directory structure"""
-        timestamp = datetime.now().strftime("%m-%d-%H-%M")
-        experiment_name = self.config.get("experiment", {}).get("name", "experiment")
-        experiment_name = experiment_name.lower().replace(" ", "_").replace("-", "_")
-        experiment_dir = f"{experiment_name}_{timestamp}"
+        """Save results with simplified structure: topic JSON files and plots folder"""
+        # Find the experiment directory (should be the same for all results)
+        experiment_path = None
+        for result in results:
+            if "error" not in result:
+                # Extract path from the first successful result
+                streaming_file = result.get("streaming_file", "")
+                if streaming_file:
+                    experiment_path = os.path.dirname(streaming_file)
+                    break
         
-        experiment_path = os.path.join(self.output_dir, experiment_dir)
+        if not experiment_path:
+            # Fallback: create new directory
+            timestamp = datetime.now().strftime("%m-%d-%H-%M")
+            experiment_name = self.config.get("experiment", {}).get("name", "experiment")
+            experiment_name = experiment_name.lower().replace(" ", "_").replace("-", "_")
+            experiment_dir = f"{experiment_name}_{timestamp}"
+            experiment_path = os.path.join(self.output_dir, experiment_dir)
+            os.makedirs(experiment_path, exist_ok=True)
         
-        # Create organized directory structure
-        dirs = {
-            'metadata': os.path.join(experiment_path, 'metadata'),
-            'data': os.path.join(experiment_path, 'data'),
-            'visualizations': os.path.join(experiment_path, 'visualizations'),
-            'convergence': os.path.join(experiment_path, 'visualizations', 'convergence'),
-            'networks': os.path.join(experiment_path, 'visualizations', 'networks')
-        }
+        # Create plots directory
+        plots_dir = os.path.join(experiment_path, "plots")
+        os.makedirs(plots_dir, exist_ok=True)
         
-        for dir_path in dirs.values():
-            os.makedirs(dir_path, exist_ok=True)
-        
-        # Save each experiment result
-        for i, result in enumerate(results):
+        # Group results by topic
+        results_by_topic = {}
+        for result in results:
             if "error" in result:
-                continue  # Skip failed experiments
+                continue
                 
-            # Extract metadata for filename
             metadata = result.get("experiment_metadata", {})
-            model = metadata.get("model", "unknown")
-            topology = metadata.get("topology", "unknown")
             topics = metadata.get("topics", [])
             topic = topics[0] if topics else "pure_math_model"
             
-            # Save result data
-            filename = f"{model}_{topology}_{topic}_result.json"
-            filepath = os.path.join(dirs['data'], filename)
-            
-            serializable_data = self._make_json_serializable(result)
-            with open(filepath, 'w') as f:
-                json.dump(serializable_data, f, indent=2)
-            
-            logger.info(f"  📁 Saved data: {filename}")
+            if topic not in results_by_topic:
+                results_by_topic[topic] = []
+            results_by_topic[topic].append(result)
+        
+        # Save each topic as a single JSON file
+        for topic, topic_results in results_by_topic.items():
+            # For pure math experiments, save each topology separately
+            if topic == "pure_math" and len(topic_results) > 1:
+                for result in topic_results:
+                    metadata = result.get("experiment_metadata", {})
+                    topology = metadata.get("topology", "unknown")
+                    filename = f"{topic}_{topology}.json"
+                    topic_file = os.path.join(experiment_path, filename)
+                    serializable_data = self._make_json_serializable(result)
+                    with open(topic_file, 'w') as f:
+                        json.dump(serializable_data, f, indent=2)
+                    logger.info(f"  📁 Saved topic: {filename}")
+                    
+                    # Remove streaming file after saving final result
+                    streaming_file = result.get("streaming_file", "")
+                    if streaming_file and os.path.exists(streaming_file):
+                        os.remove(streaming_file)
+                        logger.info(f"  🗑️ Removed streaming file: {os.path.basename(streaming_file)}")
+            else:
+                # Use the first (and should be only) result for this topic
+                result = topic_results[0]
+                
+                # Save topic data as individual JSON file
+                topic_file = os.path.join(experiment_path, f"{topic}.json")
+                serializable_data = self._make_json_serializable(result)
+                with open(topic_file, 'w') as f:
+                    json.dump(serializable_data, f, indent=2)
+                
+                logger.info(f"  📁 Saved topic: {topic}.json")
+                
+                # Remove streaming file after saving final result
+                streaming_file = result.get("streaming_file", "")
+                if streaming_file and os.path.exists(streaming_file):
+                    os.remove(streaming_file)
+                    logger.info(f"  🗑️ Removed streaming file: {os.path.basename(streaming_file)}")
         
         # Create experiment metadata
         metadata = {
-            "experiment_timestamp": timestamp,
-            "experiment_directory": experiment_dir,
-            "total_experiments": len(results),
-            "successful_experiments": len([r for r in results if "error" not in r]),
+            "experiment_timestamp": os.path.basename(experiment_path).split('_')[-2:],
+            "experiment_directory": os.path.basename(experiment_path),
+            "total_topics": len(results_by_topic),
+            "successful_topics": len([r for r in results if "error" not in r]),
+            "topics": list(results_by_topic.keys()),
             "config": self.config
         }
         
-        metadata_filepath = os.path.join(dirs['metadata'], "experiment_metadata.json")
-        with open(metadata_filepath, 'w') as f:
+        metadata_file = os.path.join(experiment_path, "experiment_metadata.json")
+        with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
         
         logger.info(f"Results saved: {experiment_path}")

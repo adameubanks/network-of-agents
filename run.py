@@ -77,48 +77,56 @@ def create_visualizations(results: List[Dict[str, Any]], experiment_path: str, c
     """Create visualizations for experiment results"""
     logger = logging.getLogger(__name__)
     
-    # Create organized visualization directories
-    convergence_dir = os.path.join(experiment_path, 'visualizations', 'convergence')
-    networks_dir = os.path.join(experiment_path, 'visualizations', 'networks')
+    # Create plots directory
+    plots_dir = os.path.join(experiment_path, "plots")
+    os.makedirs(plots_dir, exist_ok=True)
     
-    os.makedirs(convergence_dir, exist_ok=True)
-    os.makedirs(networks_dir, exist_ok=True)
-    
+    # Group results by topic
+    results_by_topic = {}
     for result in results:
-        try:
-            # Skip failed experiments
-            if "error" in result:
-                continue
+        if "error" in result:
+            continue
+            
+        metadata = result.get("experiment_metadata", {})
+        topics = metadata.get("topics", [])
+        topic = topics[0] if topics else "pure_math_model"
+        
+        if topic not in results_by_topic:
+            results_by_topic[topic] = []
+        results_by_topic[topic].append(result)
+    
+    # Create visualizations for each topic
+    for topic, topic_results in results_by_topic.items():
+        for result in topic_results:
+            try:
+                # Extract metadata
+                metadata = result.get("experiment_metadata", {})
+                model = metadata.get("model", "unknown")
+                topology = metadata.get("topology", "unknown")
                 
-            # Extract metadata
-            metadata = result.get("experiment_metadata", {})
-            model = metadata.get("model", "unknown")
-            topology = metadata.get("topology", "unknown")
-            topics = metadata.get("topics", [])
-            topic = topics[0] if topics else "pure_math_model"
-            
-            # Get the actual data from results
-            results_data = result.get("results", {})
-            if topic not in results_data:
-                logger.warning(f"No data found for topic: {topic}")
-                continue
+                # Prepare data for plotting
+                data = {
+                    'opinion_history': result.get('opinion_history', []),
+                    'mean_opinions': result.get('mean_opinions', []),
+                    'std_opinions': result.get('std_opinions', []),
+                    'final_opinions': result.get('final_opinions', []),
+                    'network_info': result.get('network_info', {})
+                }
                 
-            data = results_data[topic].get("summary_metrics", {})
-            if not data:
-                logger.warning(f"No summary metrics found for topic: {topic}")
-                continue
+                if not data['opinion_history']:
+                    logger.warning(f"No opinion history found for {topic}")
+                    continue
+                    
+                logger.info(f"📊 Creating visualizations for {topic}")
                 
-            logger.info(f"📊 Creating visualizations for {topology}_{model}_{topic}")
-            
-            # Create convergence plot
-            create_convergence_plot(data, convergence_dir, topology, model, topic)
-            
-            # Create network plot
-            create_network_plot(data, networks_dir, topology, model, topic)
-            
-            
-        except Exception as e:
-            logger.error(f"❌ Error creating visualization: {e}")
+                # Create convergence plot with simplified naming
+                create_convergence_plot(data, plots_dir, topology, model, topic)
+                
+                # Create network plot with simplified naming
+                create_network_plot(data, plots_dir, topology, model, topic)
+                
+            except Exception as e:
+                logger.error(f"❌ Error creating visualization for {topic}: {e}")
 
 def create_convergence_plot(data: Dict[str, Any], plots_dir: str, topology: str, model: str, topic: str):
     """Create convergence plot showing opinion evolution over time"""
@@ -161,7 +169,7 @@ def create_convergence_plot(data: Dict[str, Any], plots_dir: str, topology: str,
     
     fig.suptitle(f'{topology.title()} {model.title()} {topic.title()} - Opinion Convergence', fontsize=14)
     
-    filename = f"{topology}_{model}_{topic}_convergence.png"
+    filename = f"{topic}_convergence.png"
     filepath = os.path.join(plots_dir, filename)
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
@@ -227,7 +235,7 @@ def create_network_plot(data: Dict[str, Any], plots_dir: str, topology: str, mod
     
     fig.suptitle(f'{topology.title()} {model.title()} {topic.title()} - Network Evolution', fontsize=14)
     
-    filename = f"{topology}_{model}_{topic}_network.png"
+    filename = f"{topic}_network.png"
     filepath = os.path.join(plots_dir, filename)
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
