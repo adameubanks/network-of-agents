@@ -192,6 +192,9 @@ class Runner:
         if models is None:
             models = ["degroot"]
         
+        # Get reversed setting from config
+        reversed = self.config.get("reversed", False)
+        
         # Create flat list of experiment configurations
         experiments = []
         for model in models:
@@ -203,7 +206,7 @@ class Runner:
                             'network_type': network_type, 
                             'topic': topic,
                             'n_agents': n_agents,
-                            'reversed': False
+                            'reversed': reversed
                         })
                         # Add reversed version if symmetry testing enabled
                         if self.config.get("symmetry_testing", False):
@@ -220,7 +223,7 @@ class Runner:
                         'network_type': network_type,
                         'topic': None,
                         'n_agents': n_agents,
-                        'reversed': False
+                        'reversed': reversed
                     })
         
         # Run experiments with simple progress tracking

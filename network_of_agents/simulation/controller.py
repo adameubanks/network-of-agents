@@ -300,7 +300,8 @@ class Controller:
                 'num_timesteps': self.num_timesteps,
                 'llm_enabled': self.llm_enabled,
                 'random_seed': self.random_seed,
-                'topics': self.topics
+                'topics': self.topics,
+                'reversed': self.reversed
             },
             'opinion_history': self.opinion_history,
             'mean_opinions': self.mean_opinions,

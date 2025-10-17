@@ -41,5 +41,6 @@
     "save_detailed_results": true,
     "calculate_metrics": true
   },
+  "reversed": true,
   "symmetry_testing": false
 }
