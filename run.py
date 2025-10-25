@@ -77,10 +77,6 @@ def create_visualizations(results: List[Dict[str, Any]], experiment_path: str, c
     """Create visualizations for experiment results"""
     logger = logging.getLogger(__name__)
     
-    # Create plots directory
-    plots_dir = os.path.join(experiment_path, "plots")
-    os.makedirs(plots_dir, exist_ok=True)
-    
     # Group results by topic
     results_by_topic = {}
     for result in results:
@@ -88,20 +84,25 @@ def create_visualizations(results: List[Dict[str, Any]], experiment_path: str, c
             continue
             
         metadata = result.get("experiment_metadata", {})
+        model = metadata.get("model", "unknown")
         topics = metadata.get("topics", [])
         topic = topics[0] if topics else "pure_math_model"
         
-        if topic not in results_by_topic:
-            results_by_topic[topic] = []
-        results_by_topic[topic].append(result)
+        key = (model, topic)
+        if key not in results_by_topic:
+            results_by_topic[key] = []
+        results_by_topic[key].append(result)
     
     # Create visualizations for each topic
-    for topic, topic_results in results_by_topic.items():
+    for (model, topic), topic_results in results_by_topic.items():
+        # Ensure a per-topic plots directory: <root>/<model>/<topic>/plots
+        plots_dir = os.path.join(experiment_path, model, topic, "plots")
+        os.makedirs(plots_dir, exist_ok=True)
+        
         for result in topic_results:
             try:
                 # Extract metadata
                 metadata = result.get("experiment_metadata", {})
-                model = metadata.get("model", "unknown")
                 topology = metadata.get("topology", "unknown")
                 
                 # Prepare data for plotting

@@ -1,6 +1,6 @@
 {
   "experiment": {
-    "name": "DegrootSmallWorldAllTopics",
+    "name": "DegrootSmallWorldAllTopicsMini",
     "random_seed": 42
   },
   "topologies": [
@@ -30,7 +30,7 @@
     "smallworld": 31
   },
   "llm": {
-    "model": "gpt-5-nano",
+    "model": "gpt-5-mini",
     "enabled": true,
     "max_workers": 100,
     "timeout": 15,
@@ -41,6 +41,6 @@
     "save_detailed_results": true,
     "calculate_metrics": true
   },
-  "reversed": true,
+  "reversed": false,
   "symmetry_testing": false
 }

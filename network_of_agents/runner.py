@@ -107,6 +107,14 @@ class Runner:
         self.results = {}
         self.output_dir = config.get("output_dir", "results")
         
+        # Establish a single experiment root for the entire run
+        timestamp = datetime.now().strftime("%m-%d-%H-%M")
+        experiment_name = self.config.get("experiment", {}).get("name", "experiment")
+        experiment_name = experiment_name.lower().replace(" ", "_").replace("-", "_")
+        self.experiment_dir = f"{experiment_name}_{timestamp}"
+        self.experiment_path = os.path.join(self.output_dir, self.experiment_dir)
+        os.makedirs(self.experiment_path, exist_ok=True)
+        
         self.llm_client = None
         llm_config = config.get("llm", {})
         if llm_config.get("enabled", False):
@@ -142,21 +150,13 @@ class Runner:
         # Get convergence steps
         max_steps = _get_convergence_steps(network_type, model, self.config)
         
-        # Create experiment directory structure
-        timestamp = datetime.now().strftime("%m-%d-%H-%M")
-        experiment_name = self.config.get("experiment", {}).get("name", "experiment")
-        experiment_name = experiment_name.lower().replace(" ", "_").replace("-", "_")
-        experiment_dir = f"{experiment_name}_{timestamp}"
-        experiment_path = os.path.join(self.output_dir, experiment_dir)
-        os.makedirs(experiment_path, exist_ok=True)
-        
-        # Create plots directory
-        plots_path = os.path.join(experiment_path, "plots")
-        os.makedirs(plots_path, exist_ok=True)
+        # Create model/topic directory within the single experiment root
+        topic_name = topic or "pure_math_model"
+        topic_dir = os.path.join(self.experiment_path, model, topic_name)
+        os.makedirs(topic_dir, exist_ok=True)
         
         # Create topic-specific output file (temporary for streaming)
-        topic_name = topic or "pure_math_model"
-        output_file = os.path.join(experiment_path, f"{topic_name}_streaming.json")
+        output_file = os.path.join(topic_dir, f"{topic_name}_streaming.json")
         
         # Create controller with streaming output
         controller = Controller(
@@ -254,56 +254,40 @@ class Runner:
     
     def save_results(self, results: List[Dict[str, Any]]) -> str:
         """Save results with simplified structure: topic JSON files and plots folder"""
-        # Find the experiment directory (should be the same for all results)
-        experiment_path = None
-        for result in results:
-            if "error" not in result:
-                # Extract path from the first successful result
-                streaming_file = result.get("streaming_file", "")
-                if streaming_file:
-                    experiment_path = os.path.dirname(streaming_file)
-                    break
+        # Use the single experiment root established at initialization
+        experiment_path = self.experiment_path
         
-        if not experiment_path:
-            # Fallback: create new directory
-            timestamp = datetime.now().strftime("%m-%d-%H-%M")
-            experiment_name = self.config.get("experiment", {}).get("name", "experiment")
-            experiment_name = experiment_name.lower().replace(" ", "_").replace("-", "_")
-            experiment_dir = f"{experiment_name}_{timestamp}"
-            experiment_path = os.path.join(self.output_dir, experiment_dir)
-            os.makedirs(experiment_path, exist_ok=True)
-        
-        # Create plots directory
-        plots_dir = os.path.join(experiment_path, "plots")
-        os.makedirs(plots_dir, exist_ok=True)
-        
-        # Group results by topic
-        results_by_topic = {}
+        # Group results by (model, topic)
+        results_by_topic: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
         for result in results:
             if "error" in result:
                 continue
                 
             metadata = result.get("experiment_metadata", {})
+            model = metadata.get("model", "unknown")
             topics = metadata.get("topics", [])
             topic = topics[0] if topics else "pure_math_model"
             
-            if topic not in results_by_topic:
-                results_by_topic[topic] = []
-            results_by_topic[topic].append(result)
+            key = (model, topic)
+            if key not in results_by_topic:
+                results_by_topic[key] = []
+            results_by_topic[key].append(result)
         
         # Save each topic as a single JSON file
-        for topic, topic_results in results_by_topic.items():
+        for (model, topic), topic_results in results_by_topic.items():
             # For pure math experiments, save each topology separately
             if topic == "pure_math" and len(topic_results) > 1:
                 for result in topic_results:
                     metadata = result.get("experiment_metadata", {})
                     topology = metadata.get("topology", "unknown")
+                    topic_dir = os.path.join(experiment_path, model, topic)
+                    os.makedirs(topic_dir, exist_ok=True)
                     filename = f"{topic}_{topology}.json"
-                    topic_file = os.path.join(experiment_path, filename)
+                    topic_file = os.path.join(topic_dir, filename)
                     serializable_data = self._make_json_serializable(result)
                     with open(topic_file, 'w') as f:
                         json.dump(serializable_data, f, indent=2)
-                    logger.info(f"  📁 Saved topic: {filename}")
+                    logger.info(f"  📁 Saved topic JSON: {os.path.join(model, topic, filename)}")
                     
                     # Remove streaming file after saving final result
                     streaming_file = result.get("streaming_file", "")
@@ -315,12 +299,14 @@ class Runner:
                 result = topic_results[0]
                 
                 # Save topic data as individual JSON file
-                topic_file = os.path.join(experiment_path, f"{topic}.json")
+                topic_dir = os.path.join(experiment_path, model, topic)
+                os.makedirs(topic_dir, exist_ok=True)
+                topic_file = os.path.join(topic_dir, f"{topic}.json")
                 serializable_data = self._make_json_serializable(result)
                 with open(topic_file, 'w') as f:
                     json.dump(serializable_data, f, indent=2)
                 
-                logger.info(f"  📁 Saved topic: {topic}.json")
+                logger.info(f"  📁 Saved topic JSON: {os.path.join(model, topic, topic + '.json')}")
                 
                 # Remove streaming file after saving final result
                 streaming_file = result.get("streaming_file", "")
@@ -328,17 +314,19 @@ class Runner:
                     os.remove(streaming_file)
                     logger.info(f"  🗑️ Removed streaming file: {os.path.basename(streaming_file)}")
         
-        # Create experiment metadata
+        # Create experiment metadata under metadata/
         metadata = {
             "experiment_timestamp": os.path.basename(experiment_path).split('_')[-2:],
             "experiment_directory": os.path.basename(experiment_path),
             "total_topics": len(results_by_topic),
             "successful_topics": len([r for r in results if "error" not in r]),
-            "topics": list(results_by_topic.keys()),
+            "topics": [{"model": m, "topic": t} for (m, t) in results_by_topic.keys()],
             "config": self.config
         }
         
-        metadata_file = os.path.join(experiment_path, "experiment_metadata.json")
+        metadata_dir = os.path.join(experiment_path, "metadata")
+        os.makedirs(metadata_dir, exist_ok=True)
+        metadata_file = os.path.join(metadata_dir, "experiment_metadata.json")
         with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
         
