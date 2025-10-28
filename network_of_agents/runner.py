@@ -264,9 +264,18 @@ class Runner:
                 continue
                 
             metadata = result.get("experiment_metadata", {})
-            model = metadata.get("model", "unknown")
+            model = metadata.get("model") or self.config.get("models", ["degroot"])[0]
             topics = metadata.get("topics", [])
-            topic = topics[0] if topics else "pure_math_model"
+            topic = topics[0] if topics else "pure_math"
+
+            # Normalize names
+            def _slug(s: str) -> str:
+                return str(s).lower().replace(" ", "_").replace("-", "_")
+
+            model = _slug(model)
+            topic = _slug(topic)
+            if topic == "pure_math_model":
+                topic = "pure_math"
             
             key = (model, topic)
             if key not in results_by_topic:

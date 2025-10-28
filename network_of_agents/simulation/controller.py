@@ -234,7 +234,7 @@ class Controller:
                 'num_timesteps': self.num_timesteps,
                 'llm_enabled': self.llm_enabled,
                 'random_seed': self.random_seed,
-                'topics': self.topics
+                'topics': self.topics if self.topics else ['pure_math']
             },
             'opinion_history': [],
             'mean_opinions': [],
@@ -289,7 +289,6 @@ class Controller:
     
     def _get_simulation_results(self) -> Dict[str, Any]:
         """Get simulation results (simplified streaming approach)."""
-        current_topic = self.topics[0] if self.topics else ("pure_math_model" if not self.llm_enabled else "unknown")
         
         # Use streaming data directly - flatten structure for compatibility
         results = {
@@ -300,7 +299,7 @@ class Controller:
                 'num_timesteps': self.num_timesteps,
                 'llm_enabled': self.llm_enabled,
                 'random_seed': self.random_seed,
-                'topics': self.topics,
+                'topics': self.topics if self.topics else ['pure_math'],
                 'reversed': self.reversed
             },
             'opinion_history': self.opinion_history,

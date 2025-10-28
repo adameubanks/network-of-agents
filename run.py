@@ -170,7 +170,7 @@ def create_convergence_plot(data: Dict[str, Any], plots_dir: str, topology: str,
     
     fig.suptitle(f'{topology.title()} {model.title()} {topic.title()} - Opinion Convergence', fontsize=14)
     
-    filename = f"{topic}_convergence.png"
+    filename = f"{topic}_{topology}_convergence.png" if topology else f"{topic}_convergence.png"
     filepath = os.path.join(plots_dir, filename)
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
@@ -236,7 +236,7 @@ def create_network_plot(data: Dict[str, Any], plots_dir: str, topology: str, mod
     
     fig.suptitle(f'{topology.title()} {model.title()} {topic.title()} - Network Evolution', fontsize=14)
     
-    filename = f"{topic}_network.png"
+    filename = f"{topic}_{topology}_network.png" if topology else f"{topic}_network.png"
     filepath = os.path.join(plots_dir, filename)
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
