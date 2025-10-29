@@ -5,20 +5,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
-
-
-TOPIC_MAP = {
-    "activism": "corporate_activism",
-    "cloning": "human_cloning",
-    "democracy": "social_media_democracy",
-    "economy": "environment_economy",
-    "etiquette": "restaurant_etiquette",
-    "paper": "toilet_paper",
-    "safety": "gun_safety",
-    "sandwich": "hot_dog_sandwich",
-    "weddings": "child_free_weddings",
-    "immigration": "immigration",
-}
+from tools.plot_utils import to_long_topic_key, make_descriptive_title
 
 
 def read_json(path: str) -> Dict:
@@ -55,7 +42,8 @@ def load_nano_mean(nano_dir: str, topic: str) -> np.ndarray:
 
 
 def load_mini_mean(mini_dir: str, topic: str) -> np.ndarray:
-    mini_path = os.path.join(mini_dir, "degroot", TOPIC_MAP.get(topic, topic), f"{TOPIC_MAP.get(topic, topic)}.json")
+    long_key = to_long_topic_key(topic)
+    mini_path = os.path.join(mini_dir, "degroot", long_key, f"{long_key}.json")
     data = read_json(mini_path)
     return extract_mean_opinions(data, topic)
 
@@ -65,27 +53,24 @@ def rmse(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sqrt(np.mean((a[:n] - b[:n]) ** 2)))
 
 
-def plot_topic(pure: np.ndarray, nano: np.ndarray, mini: np.ndarray, topic: str, outdir: str) -> None:
-    n = min(len(pure), len(nano), len(mini))
+def plot_topic(pure: np.ndarray, nano_a: np.ndarray, nano_b: np.ndarray, mini: np.ndarray, topic: str, outdir: str) -> None:
+    n = min(len(pure), len(nano_a), len(nano_b), len(mini))
     x = np.arange(n)
     pure_n = pure[:n]
-    nano_n = nano[:n]
+    nano_a_n = nano_a[:n]
+    nano_b_n = nano_b[:n]
     mini_n = mini[:n]
 
-    nano_rmse = rmse(nano_n, pure_n)
-    mini_rmse = rmse(mini_n, pure_n)
-
-    plt.figure(figsize=(8, 4))
-    plt.plot(x, pure_n, label="pure_math", color="#4e79a7", linewidth=2)
-    plt.plot(x, nano_n, label="nano (a_vs_b)", color="#f28e2b")
-    plt.plot(x, mini_n, label="mini (a_vs_b_mini)", color="#59a14f")
-    plt.ylim(-1, 1)
-    plt.xlabel("timestep")
-    plt.ylabel("mean opinion")
-    plt.title(f"{topic} — Convergence vs pure_math")
-    plt.suptitle(f"RMSE nano={nano_rmse:.3f}, mini={mini_rmse:.3f}", y=0.98, fontsize=9)
-    plt.legend()
-    plt.tight_layout()
+    fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
+    ax.plot(x, pure_n, label="pure_math", color="#4e79a7", linewidth=2)
+    ax.plot(x, nano_a_n, label="nano (a_vs_b)", color="#f28e2b")
+    ax.plot(x, nano_b_n, label="nano (b_vs_a)", color="#59a14f")
+    ax.plot(x, mini_n, label="mini (a_vs_b_mini)", color="#e15759")
+    ax.set_ylim(-1, 1)
+    ax.set_xlabel("timestep")
+    ax.set_ylabel("mean opinion")
+    ax.set_title(make_descriptive_title(topic, multiline=True), pad=4)
+    ax.legend()
 
     os.makedirs(outdir, exist_ok=True)
     out_path = os.path.join(outdir, f"{topic}_convergence.png")
@@ -103,8 +88,9 @@ def discover_nano_topics(nano_dir: str) -> List[str]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Plot convergence vs pure_math for each topic")
+    parser = argparse.ArgumentParser(description="Plot convergence vs pure_math per topic (supersedes symmetry overlays)")
     parser.add_argument("--nano", required=True, help="Path to a_vs_b dir")
+    parser.add_argument("--nano_b", required=True, help="Path to b_vs_a dir")
     parser.add_argument("--mini", required=True, help="Path to a_vs_b_mini dir")
     parser.add_argument("--pure", required=True, help="Path to pure_math_smallworld.json")
     parser.add_argument("--outdir", default="results/pure_math_comparison", help="Output directory for plots")
@@ -116,8 +102,15 @@ def main():
     for topic in topics:
         try:
             nano = load_nano_mean(args.nano, topic)
+            long_key = to_long_topic_key(topic)
+            b_json_path = os.path.join(args.nano_b, f"{long_key}.json")
+            nano_b_data = read_json(b_json_path)
+            try:
+                nano_b = extract_mean_opinions(nano_b_data, topic)
+            except KeyError:
+                nano_b = extract_mean_opinions(nano_b_data, long_key)
             mini = load_mini_mean(args.mini, topic)
-            plot_topic(pure, nano, mini, topic, args.outdir)
+            plot_topic(pure, nano, nano_b, mini, topic, args.outdir)
         except FileNotFoundError:
             continue
         except KeyError:
