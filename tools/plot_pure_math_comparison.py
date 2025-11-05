@@ -43,7 +43,10 @@ def load_nano_mean(nano_dir: str, topic: str) -> np.ndarray:
 
 def load_mini_mean(mini_dir: str, topic: str) -> np.ndarray:
     long_key = to_long_topic_key(topic)
+    # Try both regular and streaming file names
     mini_path = os.path.join(mini_dir, "degroot", long_key, f"{long_key}.json")
+    if not os.path.exists(mini_path):
+        mini_path = os.path.join(mini_dir, "degroot", long_key, f"{long_key}_streaming.json")
     data = read_json(mini_path)
     return extract_mean_opinions(data, topic)
 
@@ -53,19 +56,26 @@ def rmse(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sqrt(np.mean((a[:n] - b[:n]) ** 2)))
 
 
-def plot_topic(pure: np.ndarray, nano_a: np.ndarray, nano_b: np.ndarray, mini: np.ndarray, topic: str, outdir: str) -> None:
-    n = min(len(pure), len(nano_a), len(nano_b), len(mini))
+def plot_topic(pure: np.ndarray, nano_a: np.ndarray, nano_b: np.ndarray, mini: np.ndarray, 
+               topic: str, outdir: str, mini_b: np.ndarray = None) -> None:
+    # Build list of arrays that exist
+    arrays = [("pure_math", pure, "#4e79a7", 2),
+              ("nano (a_vs_b)", nano_a, "#f28e2b", 1),
+              ("nano (b_vs_a)", nano_b, "#59a14f", 1),
+              ("mini (a_vs_b_mini)", mini, "#e15759", 1)]
+    
+    if mini_b is not None:
+        arrays.append(("mini (b_vs_a_mini)", mini_b, "#76b7b2", 1))
+    
+    # Find minimum length
+    n = min(len(arr) for _, arr, _, _ in arrays)
     x = np.arange(n)
-    pure_n = pure[:n]
-    nano_a_n = nano_a[:n]
-    nano_b_n = nano_b[:n]
-    mini_n = mini[:n]
 
     fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
-    ax.plot(x, pure_n, label="pure_math", color="#4e79a7", linewidth=2)
-    ax.plot(x, nano_a_n, label="nano (a_vs_b)", color="#f28e2b")
-    ax.plot(x, nano_b_n, label="nano (b_vs_a)", color="#59a14f")
-    ax.plot(x, mini_n, label="mini (a_vs_b_mini)", color="#e15759")
+    
+    for label, arr, color, linewidth in arrays:
+        ax.plot(x, arr[:n], label=label, color=color, linewidth=linewidth)
+    
     ax.set_ylim(-1, 1)
     ax.set_xlabel("timestep")
     ax.set_ylabel("mean opinion")
@@ -92,6 +102,7 @@ def main():
     parser.add_argument("--nano", required=True, help="Path to a_vs_b dir")
     parser.add_argument("--nano_b", required=True, help="Path to b_vs_a dir")
     parser.add_argument("--mini", required=True, help="Path to a_vs_b_mini dir")
+    parser.add_argument("--mini_b", help="Path to b_vs_a_mini dir (optional, for incomplete results)")
     parser.add_argument("--pure", required=True, help="Path to pure_math_smallworld.json")
     parser.add_argument("--outdir", default="results/pure_math_comparison", help="Output directory for plots")
     args = parser.parse_args()
@@ -110,7 +121,17 @@ def main():
             except KeyError:
                 nano_b = extract_mean_opinions(nano_b_data, long_key)
             mini = load_mini_mean(args.mini, topic)
-            plot_topic(pure, nano, nano_b, mini, topic, args.outdir)
+            
+            # Try to load mini_b if provided
+            mini_b = None
+            if args.mini_b:
+                try:
+                    mini_b = load_mini_mean(args.mini_b, topic)
+                except (FileNotFoundError, KeyError):
+                    # Topic not available in mini_b yet (incomplete)
+                    pass
+            
+            plot_topic(pure, nano, nano_b, mini, topic, args.outdir, mini_b)
         except FileNotFoundError:
             continue
         except KeyError:
