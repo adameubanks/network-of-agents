@@ -10,6 +10,7 @@ import concurrent.futures as _f
 from dotenv import load_dotenv
 import logging
 import re
+import time
 
 load_dotenv()
 
@@ -52,37 +53,50 @@ class LLMClient:
         self.timeout = timeout
         self.max_tokens = max_tokens
     
-    def _call_llm(self, prompt: str) -> str:
-        """Make a single LLM call and return the response text"""
-        try:
-            max_tokens = min(4000, self.max_tokens * 4) if "gpt-5" in self.model_name.lower() else self.max_tokens
-            
-            completion_params = {
-                "model": self.model_name,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_tokens,
-                "temperature": 1.0 if "gpt-5" in self.model_name.lower() else 0.7
-            }
-            
-            if "gpt-5" in self.model_name.lower():
-                completion_params["reasoning_effort"] = "minimal"
-            
-            response = litellm.completion(**completion_params)
-            
-            # Extract content from response
-            if hasattr(response, 'choices') and response.choices:
-                choice = response.choices[0]
-                content = getattr(choice.message, 'content', '') or getattr(choice, 'text', '') or getattr(choice, 'content', '') or str(choice)
-            else:
-                content = getattr(response, 'content', '') or getattr(response, 'text', '') or str(response)
-            
-            if not content or content.strip() == "":
-                raise ValueError(f"Empty response from {self.model_name}")
-            
-            return content
-        except Exception as e:
-            print(f"LLM call failed: {e}")
-            return ""
+    def _call_llm(self, prompt: str, max_retries: int = 3) -> str:
+        """Make a single LLM call with retry logic for rate limits"""
+        max_tokens = min(4000, self.max_tokens * 4) if "gpt-5" in self.model_name.lower() else self.max_tokens
+        
+        completion_params = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": 1.0 if "gpt-5" in self.model_name.lower() else 0.7
+        }
+        
+        if "gpt-5" in self.model_name.lower():
+            completion_params["reasoning_effort"] = "minimal"
+        
+        for attempt in range(max_retries):
+            try:
+                response = litellm.completion(**completion_params)
+                
+                # Extract content from response
+                if hasattr(response, 'choices') and response.choices:
+                    choice = response.choices[0]
+                    content = getattr(choice.message, 'content', '') or getattr(choice, 'text', '') or getattr(choice, 'content', '') or str(choice)
+                else:
+                    content = getattr(response, 'content', '') or getattr(response, 'text', '') or str(response)
+                
+                if not content or content.strip() == "":
+                    raise ValueError(f"Empty response from {self.model_name}")
+                
+                return content
+                
+            except Exception as e:
+                error_str = str(e).lower()
+                is_rate_limit = 'rate' in error_str or '429' in error_str or 'quota' in error_str
+                
+                if is_rate_limit and attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) + (attempt * 0.5)
+                    print(f"Rate limit hit, retrying in {wait_time:.1f}s (attempt {attempt + 1}/{max_retries})...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"LLM call failed: {e}")
+                    return ""
+        
+        return ""
     
     
     def generate_posts(self, topic, agents: List, neighbor_posts_per_agent: Optional[List[List[str]]] = None) -> List[str]:
@@ -107,7 +121,7 @@ class LLMClient:
         return out
     
     def _call_llm_batch(self, prompts: List[str]) -> List[str]:
-        """Call LLM for multiple prompts in parallel"""
+        """Call LLM for multiple prompts in parallel with rate limiting"""
         if not prompts:
             return []
         
@@ -120,12 +134,23 @@ class LLMClient:
                 print(f"LLM call {i} failed: {e}")
                 results[i] = ""
         
-        # Use parallel processing but with reasonable limits
-        workers = min(self.max_workers, max(1, len(prompts)))
+        # Reduce workers to avoid rate limits - use smaller batches
+        # Rate limits are often per-minute, so we want to avoid too many parallel requests
+        workers = min(self.max_workers, max(1, len(prompts)), 20)
         
-        with _f.ThreadPoolExecutor(max_workers=workers) as ex:
-            futures = [ex.submit(_one, i, p) for i, p in enumerate(prompts)]
-            _f.wait(futures, timeout=300)
+        # Process in smaller batches to avoid overwhelming the API
+        batch_size = workers * 2
+        for batch_start in range(0, len(prompts), batch_size):
+            batch_end = min(batch_start + batch_size, len(prompts))
+            batch_prompts = prompts[batch_start:batch_end]
+            
+            with _f.ThreadPoolExecutor(max_workers=workers) as ex:
+                futures = [ex.submit(_one, batch_start + i, p) for i, p in enumerate(batch_prompts)]
+                _f.wait(futures, timeout=300)
+            
+            # Small delay between batches to avoid rate limits
+            if batch_end < len(prompts):
+                time.sleep(0.5)
         
         return results
     
