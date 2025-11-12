@@ -61,7 +61,7 @@ class LLMClient:
             "model": self.model_name,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
-            "temperature": 1.0 if "gpt-5" in self.model_name.lower() else 0.7
+            "temperature": 1.0
         }
         
         if "gpt-5" in self.model_name.lower():
