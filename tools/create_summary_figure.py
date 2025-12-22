@@ -55,24 +55,24 @@ def create_rmse_comparison_figure(data, output_path):
         nano_b_rmse.append(by_exp.get('nano-b', {}).get(topic, {}).get('rmse', 0))
         mini_rmse.append(by_exp.get('mini', {}).get(topic, {}).get('rmse', 0))
     
-    # Create figure
-    fig, ax = plt.subplots(figsize=(12, 6))
+    # Create figure with horizontal bars (topics on y-axis)
+    fig, ax = plt.subplots(figsize=(8, 10))
     
-    x = np.arange(len(topics_display))
-    width = 0.25
+    y = np.arange(len(topics_display))
+    height = 0.25
     
-    bars1 = ax.bar(x - width, nano_a_rmse, width, label='Nano, A vs B', alpha=0.8)
-    bars2 = ax.bar(x, nano_b_rmse, width, label='Nano, B vs A', alpha=0.8)
-    bars3 = ax.bar(x + width, mini_rmse, width, label='Mini, A vs B', alpha=0.8)
+    bars1 = ax.barh(y - height, nano_a_rmse, height, label='Nano, A vs B', alpha=0.8)
+    bars2 = ax.barh(y, nano_b_rmse, height, label='Nano, B vs A', alpha=0.8)
+    bars3 = ax.barh(y + height, mini_rmse, height, label='Mini, A vs B', alpha=0.8)
     
-    ax.set_xlabel('Topic', fontsize=11)
-    ax.set_ylabel('RMSE', fontsize=11)
+    ax.set_xlabel('RMSE', fontsize=11)
+    ax.set_ylabel('Topic', fontsize=11)
     ax.set_title('RMSE by Topic and Condition', fontsize=12, fontweight='bold')
-    ax.set_xticks(x)
-    ax.set_xticklabels(topics_display, rotation=45, ha='right', fontsize=9)
+    ax.set_yticks(y)
+    ax.set_yticklabels(topics_display, fontsize=9)
     ax.legend(fontsize=9)
-    ax.grid(True, alpha=0.3, axis='y')
-    ax.set_ylim(0, max(max(nano_a_rmse), max(nano_b_rmse), max(mini_rmse)) * 1.1)
+    ax.grid(True, alpha=0.3, axis='x')
+    ax.set_xlim(0, max(max(nano_a_rmse), max(nano_b_rmse), max(mini_rmse)) * 1.1)
     
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
