@@ -48,22 +48,25 @@ def create_rmse_comparison_figure(data, output_path):
     topics_display = [t.replace('_', ' ').title() for t in all_topics]
     nano_a_rmse = []
     nano_b_rmse = []
-    mini_rmse = []
+    mini_a_rmse = []
+    mini_b_rmse = []
     
     for topic in all_topics:
         nano_a_rmse.append(by_exp.get('nano-a', {}).get(topic, {}).get('rmse', 0))
         nano_b_rmse.append(by_exp.get('nano-b', {}).get(topic, {}).get('rmse', 0))
-        mini_rmse.append(by_exp.get('mini', {}).get(topic, {}).get('rmse', 0))
+        mini_a_rmse.append(by_exp.get('mini', {}).get(topic, {}).get('rmse', 0))
+        mini_b_rmse.append(by_exp.get('mini-b', {}).get(topic, {}).get('rmse', 0))
     
     # Create figure with horizontal bars (topics on y-axis)
     fig, ax = plt.subplots(figsize=(8, 10))
     
     y = np.arange(len(topics_display))
-    height = 0.25
+    height = 0.2
     
-    bars1 = ax.barh(y - height, nano_a_rmse, height, label='Nano, A vs B', alpha=0.8)
-    bars2 = ax.barh(y, nano_b_rmse, height, label='Nano, B vs A', alpha=0.8)
-    bars3 = ax.barh(y + height, mini_rmse, height, label='Mini, A vs B', alpha=0.8)
+    bars1 = ax.barh(y - 1.5*height, nano_a_rmse, height, label='Nano, A vs B', alpha=0.8, color='#f28e2b')
+    bars2 = ax.barh(y - 0.5*height, nano_b_rmse, height, label='Nano, B vs A', alpha=0.8, color='#59a14f')
+    bars3 = ax.barh(y + 0.5*height, mini_a_rmse, height, label='Mini, A vs B', alpha=0.8, color='#e15759')
+    bars4 = ax.barh(y + 1.5*height, mini_b_rmse, height, label='Mini, B vs A', alpha=0.8, color='#76b7b2')
     
     ax.set_xlabel('RMSE', fontsize=11)
     ax.set_ylabel('Topic', fontsize=11)
@@ -72,7 +75,8 @@ def create_rmse_comparison_figure(data, output_path):
     ax.set_yticklabels(topics_display, fontsize=9)
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3, axis='x')
-    ax.set_xlim(0, max(max(nano_a_rmse), max(nano_b_rmse), max(mini_rmse)) * 1.1)
+    all_rmse = nano_a_rmse + nano_b_rmse + mini_a_rmse + mini_b_rmse
+    ax.set_xlim(0, max(all_rmse) * 1.1 if all_rmse else 1.0)
     
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
