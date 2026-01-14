@@ -22,8 +22,28 @@ def to_long_topic_key(short_key: str) -> str:
 
 
 def to_display_name(short_or_long_key: str) -> str:
+    """Convert topic key to properly capitalized display name."""
+    # Special cases for proper formatting
+    special_cases = {
+        "child_free_weddings": "Child-Free Weddings",
+        "hot_dog_sandwich": "Hot Dog Sandwich",
+        "social_media_democracy": "Social Media Democracy",
+        "restaurant_etiquette": "Restaurant Etiquette",
+        "corporate_activism": "Corporate Activism",
+        "environment_economy": "Environment Economy",
+        "gun_safety": "Gun Safety",
+        "human_cloning": "Human Cloning",
+        "toilet_paper": "Toilet Paper",
+        "immigration": "Immigration"
+    }
+    
+    if short_or_long_key in special_cases:
+        return special_cases[short_or_long_key]
+    
+    # Default: title case
     key = short_or_long_key.replace("_", " ")
-    return key.capitalize()
+    words = key.split()
+    return " ".join(word.capitalize() for word in words)
 
 
 def _ellipsize(text: str, max_len: int = 90) -> str:

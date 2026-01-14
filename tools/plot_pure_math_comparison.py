@@ -142,10 +142,15 @@ def plot_topic(pure: np.ndarray, nano_a: np.ndarray, nano_b: np.ndarray, mini: n
     
     # Extend y-axis slightly beyond [-1, 1] to see boundary values
     ax.set_ylim(-1.1, 1.1)
-    ax.set_xlabel("timestep")
-    ax.set_ylabel("mean opinion")
+    ax.set_xlabel("Timestep")
+    ax.set_ylabel("Mean Opinion")
     ax.set_title(make_descriptive_title(topic, multiline=True), pad=4)
-    ax.legend()
+    
+    # Move legend outside and below the plot
+    n_legend_items = len(arrays)
+    ncol = 5 if n_legend_items == 5 else 4
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=ncol, frameon=True)
+    
     ax.grid(True, alpha=0.3, linestyle='--')
 
     os.makedirs(outdir, exist_ok=True)
