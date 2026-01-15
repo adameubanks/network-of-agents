@@ -8,6 +8,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
+plt.rcParams.update({
+    'font.size': 32,
+    'axes.titlesize': 36,
+    'axes.labelsize': 34,
+    'xtick.labelsize': 32,
+    'ytick.labelsize': 32,
+    'legend.fontsize': 32,
+    'figure.titlesize': 38
+})
+
 def load_data(json_path):
     with open(json_path, 'r') as f:
         return json.load(f)
@@ -66,11 +76,12 @@ def create_rmse_comparison_figure(data, output_path):
     
     # Create figure with horizontal bars (topics on y-axis)
     # Use centered bars to show positive/negative convergence
-    # Make it taller so bars are thicker
-    fig, ax = plt.subplots(figsize=(6, 12))
+    # Make it much taller and wider to fill space
+    fig, ax = plt.subplots(figsize=(28, 90))
     
-    y = np.arange(len(topics_display))
-    height = 0.22  # Bar height - adjusted to prevent overlap
+    # Increase spacing between topics to prevent bar collisions
+    y = np.arange(len(topics_display)) * 5.0
+    height = 1.0  # Bar height - much thicker for visibility
     
     # Helper function to plot bars with None handling
     def plot_bars(y_pos, values, height, label, color):
@@ -88,29 +99,28 @@ def create_rmse_comparison_figure(data, output_path):
     plot_bars(y + 0.5*height, mini_a_diff, height, 'Mini, A vs B', '#e15759')
     plot_bars(y + 1.5*height, mini_b_diff, height, 'Mini, B vs A', '#76b7b2')
     
-    ax.axvline(x=0, color='black', linestyle='-', linewidth=2.0)
-    ax.set_xlabel('Convergence Direction Bias ($\Delta_{\mathrm{conv}}$)', fontsize=18)
-    ax.set_ylabel('Topic', fontsize=18)
-    ax.set_title('Convergence Direction Bias: Difference from DeGroot Baseline\n(Positive = converges more positive, Negative = converges more negative)', 
-                 fontsize=20, fontweight='bold', pad=15)
+    ax.axvline(x=0, color='black', linestyle='-', linewidth=5.0)
+    ax.set_xlabel('Convergence Direction Bias ($\Delta_{\mathrm{conv}}$)', fontsize=100, fontweight='bold')
+    ax.set_ylabel('Topic', fontsize=100, fontweight='bold')
     ax.set_yticks(y)
-    ax.set_yticklabels(topics_display, fontsize=16)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1), ncol=4, fontsize=20, frameon=True, 
-              columnspacing=1.2, handlelength=2.0)
-    ax.tick_params(axis='both', which='major', labelsize=16)
-    ax.grid(True, alpha=0.3, axis='x', linewidth=1.5)
+    ax.set_yticklabels(topics_display, fontsize=90)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.06), ncol=2, fontsize=90, frameon=True, 
+              columnspacing=3.0, handlelength=5.0, framealpha=0.9)
+    ax.tick_params(axis='both', which='major', labelsize=90, width=4.0, length=18)
+    ax.grid(True, alpha=0.4, linewidth=3.0, which='both', linestyle='--', zorder=0)
     
-    # Set symmetric x-axis limits
+    # Set symmetric x-axis limits with no padding - use exact data range
     all_diffs = [d for d in nano_a_diff + nano_b_diff + mini_a_diff + mini_b_diff if d is not None]
     if all_diffs:
         max_abs = max(abs(d) for d in all_diffs)
-        ax.set_xlim(-max_abs * 1.1, max_abs * 1.1)
+        ax.set_xlim(-max_abs, max_abs)
     
     # Adjust layout to maximize plot area width and height
-    plt.tight_layout(rect=[0, 0.1, 1, 1])
-    # Make sure plot uses full width and more height
-    ax.set_position([0.1, 0.15, 0.9, 0.8])
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    # Use maximum width - minimal margins to use almost full page width
+    # Reduce plot height slightly to make fonts appear larger relative to plot, and leave room for legend
+    # Set position manually: [left, bottom, width, height] in figure coordinates
+    ax.set_position([0.02, 0.10, 0.97, 0.85])
+    plt.savefig(output_path, dpi=250, bbox_inches='tight', facecolor='white', pad_inches=0)
     plt.close()
     print(f"Saved figure to {output_path}")
 
