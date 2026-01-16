@@ -135,7 +135,7 @@ def plot_topic(pure: np.ndarray, nano_a: np.ndarray, nano_b: np.ndarray, mini: n
     
     ax.axhline(y=0, color='black', linestyle='--', linewidth=2, alpha=0.5)
     ax.set_xlabel("Timestep", fontsize=36, fontweight='bold')
-    ax.set_ylabel("Difference from Mathematical Convergence", fontsize=36, fontweight='bold')
+    ax.set_ylabel("Difference from Math Convergence", fontsize=36, fontweight='bold', labelpad=20)
     long_key = to_long_topic_key(topic)
     ax.set_title(to_display_name(long_key), pad=10, fontsize=40, fontweight='bold')
     
@@ -149,8 +149,8 @@ def plot_topic(pure: np.ndarray, nano_a: np.ndarray, nano_b: np.ndarray, mini: n
     
     os.makedirs(outdir, exist_ok=True)
     out_path = os.path.join(outdir, f"{topic}_convergence.png")
-    ax.set_position([0.08, 0.15, 0.90, 0.75])
-    plt.savefig(out_path, dpi=300, bbox_inches='tight', facecolor='white', pad_inches=0.1)
+    fig.subplots_adjust(left=0.18, bottom=0.15, right=0.95, top=0.90)
+    plt.savefig(out_path, dpi=300, bbox_inches='tight', facecolor='white', pad_inches=0.5)
     plt.close()
 
 

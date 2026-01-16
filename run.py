@@ -169,10 +169,11 @@ def create_convergence_plot(data: Dict[str, Any], plots_dir: str, topology: str,
     ax2.grid(True, alpha=0.3)
     
     fig.suptitle(f'{topology.title()} {model.title()} {topic.title()} - Opinion Convergence', fontsize=14)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
     
     filename = f"{topic}_{topology}_convergence.png" if topology else f"{topic}_convergence.png"
     filepath = os.path.join(plots_dir, filename)
-    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.savefig(filepath, dpi=300, bbox_inches='tight', pad_inches=0.2)
     plt.close()
     
     logger = logging.getLogger(__name__)
